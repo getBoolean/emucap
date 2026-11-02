@@ -178,6 +178,19 @@ fn save_state_receipt_is_explicit_opt_in() {
 }
 
 #[test]
+fn launch_surfaces_accept_optional_nds_storage_and_reject_unknown_fields() {
+    let json = r#"{"content_path":"game.nds","nds_storage_image":"cards/保存 card.img"}"#;
+    assert!(serde_json::from_str::<LaunchPlanArgs>(json).is_ok());
+    assert!(serde_json::from_str::<LaunchArgs>(json).is_ok());
+    let no_storage = r#"{"content_path":"game.nds"}"#;
+    assert!(serde_json::from_str::<LaunchPlanArgs>(no_storage).is_ok());
+    assert!(serde_json::from_str::<LaunchArgs>(no_storage).is_ok());
+    let unknown = r#"{"content_path":"game.nds","extra_arguments":[]}"#;
+    assert!(serde_json::from_str::<LaunchPlanArgs>(unknown).is_err());
+    assert!(serde_json::from_str::<LaunchArgs>(unknown).is_err());
+}
+
+#[test]
 fn launch_and_recording_parse_explicit_repeatability_selection() {
     let launch: LaunchArgs = serde_json::from_str(
         r#"{"content_path":"/tmp/game.sfc","system":"snes","execution_profile":"repeatable"}"#,

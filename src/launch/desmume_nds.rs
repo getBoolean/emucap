@@ -60,6 +60,8 @@ pub fn resolve_bridge(repo_root: &Path) -> Option<PathBuf> {
 }
 
 pub struct Launch<'a> {
+    /// Optional writable raw CompactFlash image for the embedded MPCF driver.
+    pub storage_image: Option<&'a Path>,
     /// The headless desmume-cli binary.
     pub binary: &'a Path,
     /// The `emucap-desmume-nds-bridge` binary that relays the GDB stubs to emucap.
@@ -268,20 +270,42 @@ fn wait_gdb_ready(pid: u32, arm9: u16, arm7: u16, timeout: Duration) -> io::Resu
 /// Headless DeSmuME with both GDB stubs. Mirrors `launch.sh`:
 /// `desmume-cli --arm9gdb <p9> --arm7gdb <p7> --disable-sound <rom>`.
 fn emu_spec(l: &Launch, arm9: u16, arm7: u16, native_debug_token: &str) -> LaunchSpec {
-    let spec = LaunchSpec::new(l.binary, l.log_path)
+    let mut spec = LaunchSpec::new(l.binary, l.log_path)
         .arg("--arm9gdb")
         .arg(arm9.to_string())
         .arg("--arm7gdb")
         .arg(arm7.to_string())
         .arg("--disable-sound")
-        .arg(l.content)
         .env("EMUCAP_NATIVE_DEBUG_TOKEN", native_debug_token);
+    if let Some(image) = l.storage_image {
+        spec = spec.arg("--cflash-image").arg(image.to_string_lossy());
+    }
+    spec = spec.arg(l.content);
     // Runtime headless/window switch read by the fork's main.cpp. Default (unset) stays headless.
     if l.display {
         spec.env("EMUCAP_NDS_DISPLAY", "1")
     } else {
         spec
     }
+}
+
+/// Admit an existing writable image without creating, truncating or modifying it.
+/// Keep this check before managed generation replacement as well as native launch.
+pub fn admit_storage_image(path: &Path) -> io::Result<PathBuf> {
+    let metadata = std::fs::metadata(path)?;
+    if !metadata.is_file() || metadata.permissions().readonly() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "nds_storage_image must be an existing writable regular file",
+        ));
+    }
+    std::fs::OpenOptions::new()
+        .read(true)
+        .write(true)
+        .open(path)?;
+    // Preserve ordinary Windows paths: canonicalize adds a verbatim prefix that
+    // the native emulator's C file API need not accept.
+    std::path::absolute(path)
 }
 
 fn validate_session_token(l: &Launch) -> io::Result<()> {
@@ -325,6 +349,9 @@ fn bridge_spec(l: &Launch, arm9: u16, arm7: u16, native_debug_token: &str) -> La
 /// `Connection refused`). If the bridge spawn fails, the launcher terminates DeSmuME.
 pub fn launch(l: &Launch) -> io::Result<Launched> {
     validate_session_token(l)?;
+    if let Some(image) = l.storage_image {
+        admit_storage_image(image)?;
+    }
     let native_debug_token = new_native_debug_token();
     // Reserve both ports simultaneously (both listeners alive) so ARM9 != ARM7, read the numbers,
     // then drop the reservations to free the ports for DeSmuME to bind.
