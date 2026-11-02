@@ -824,13 +824,13 @@ fn normalize_frame_progress(mut reply: Value, requested: u64) -> BridgeResult<Va
     let completed = reply["completed"].as_u64();
     let status = reply["status"].as_str();
     if reply["count"].as_u64() != Some(requested)
-        || !completed.is_some_and(|n| n <= requested)
+        || completed.is_none_or(|n| n > requested)
         || !matches!(status, Some("completed" | "interrupted"))
         || (status == Some("completed") && completed != Some(requested))
         || (status == Some("interrupted")
-            && !reply["reason"]
+            && reply["reason"]
                 .as_str()
-                .is_some_and(|reason| !reason.is_empty()))
+                .is_none_or(|reason| reason.is_empty()))
     {
         return Err(BridgeError::Emulator(
             "invalid native frame progress".into(),

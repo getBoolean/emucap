@@ -1,51 +1,37 @@
-name: Release binaries
+name: Release Pico storage cores
 
 on:
   workflow_dispatch:
     inputs:
       tag:
-        description: Existing release tag (omit for validation only)
-        required: false
+        description: Existing immutable fork tag (1.1.0-pico.N)
+        required: true
         type: string
-      native_run:
-        description: Completed native package assembly run (required for publication)
-        required: false
-        type: string
-      validate_only:
-        description: Validate this branch without a tag or publication
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 concurrency:
-  group: release-core-${{ inputs.tag || github.ref }}
+  group: pico-core-${{ inputs.tag }}
   cancel-in-progress: false
 
 jobs:
   resolve:
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     outputs:
-      revision: ${{ steps.tag.outputs.revision }}
+      revision: ${{ steps.source.outputs.revision }}
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
           fetch-depth: 0
-      - id: tag
-        shell: bash
+      - id: source
         env:
           RELEASE_TAG: ${{ inputs.tag }}
-          VALIDATE_ONLY: ${{ inputs.validate_only }}
-          NATIVE_RUN: ${{ inputs.native_run }}
         run: |
-          if [ "$VALIDATE_ONLY" = true ]; then
-            revision=$(git rev-parse HEAD)
-          else
-            [[ "$NATIVE_RUN" =~ ^[0-9]+$ ]]
-            [[ "$RELEASE_TAG" =~ ^[0-9]+\.[0-9]+\.[0-9]+(-rc\.[1-9][0-9]*)?$ ]]
-            revision=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
-          fi
+          [[ "$RELEASE_TAG" =~ ^1\.1\.0-pico\.[1-9][0-9]*$ ]]
+          revision=$(git rev-parse --verify "refs/tags/$RELEASE_TAG^{commit}")
+          test "$revision" = "$(git rev-parse HEAD)"
+          python3 -c 'import os,tomllib; assert tomllib.load(open("Cargo.toml","rb"))["package"]["version"] == os.environ["RELEASE_TAG"]'
           echo "revision=$revision" >> "$GITHUB_OUTPUT"
 
   build:
@@ -56,45 +42,29 @@ jobs:
       version: ${{ inputs.tag }}
 
   publish:
-    if: ${{ !inputs.validate_only }}
     needs: [resolve, build]
-    runs-on: ubuntu-22.04
+    runs-on: ubuntu-24.04
     permissions:
       contents: write
       actions: read
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with:
-          path: packaging
-          fetch-depth: 0
-      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-        with:
           ref: ${{ needs.resolve.outputs.revision }}
-          path: source
-          fetch-depth: 0
-      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
-        with:
-          python-version: '3.13'
       - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
         with:
           pattern: core-*
           merge-multiple: true
-          path: core-artifacts
-      - name: Authenticate assembly and prepare exact release assets
-        env:
-          GH_TOKEN: ${{ github.token }}
-          NATIVE_RUN: ${{ inputs.native_run }}
-        run: |
-          python packaging/_tests/release/native_release.py --repo "$GITHUB_REPOSITORY" --run "$NATIVE_RUN" \
-            --source source --core core-artifacts --native native-artifacts \
-            --output prepared --asset-list release-assets.json
-      - name: Publish the prepared draft after all package checks pass
+          path: packages
+      - name: Verify and publish fork core packages
+        working-directory: packages
         env:
           GH_TOKEN: ${{ github.token }}
           GH_REPO: ${{ github.repository }}
           RELEASE_TAG: ${{ inputs.tag }}
-          SOURCE_REVISION: ${{ needs.resolve.outputs.revision }}
-        shell: bash
         run: |
-          python packaging/_tests/release/publish_release.py --repo "$GH_REPO" \
-            --tag "$RELEASE_TAG" --revision "$SOURCE_REVISION" --asset-list release-assets.json
+          sha256sum --check *.sha256
+          cat *.sha256 > SHA256SUMS
+          gh release create "$RELEASE_TAG" --verify-tag --prerelease \
+            --title "Pico storage core $RELEASE_TAG" --notes-file ../FORK.md \
+            ./*.zip ./*.tar.gz ./*.json ./*.sha256 ./SHA256SUMS
