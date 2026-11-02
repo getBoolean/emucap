@@ -151,6 +151,12 @@ pub(crate) fn apply_task_entry_transition(
     if let Some(system) = args.system.as_deref() {
         replan_arguments.insert("system".into(), serde_json::Value::String(system.into()));
     }
+    if let Some(image) = args.nds_storage_image.as_deref() {
+        replan_arguments.insert(
+            "nds_storage_image".into(),
+            serde_json::Value::String(image.into()),
+        );
+    }
     if let Some(approval) = args.indirect_media_approval.as_ref() {
         replan_arguments.insert(
             "indirect_media_approval".into(),

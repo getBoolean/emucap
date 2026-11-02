@@ -23,6 +23,21 @@ pub(super) fn same_path(a: &Path, b: &Path) -> bool {
     }
 }
 
+pub(super) fn nds_storage_precondition(system: &str, image: Option<&str>) -> serde_json::Value {
+    let Some(image) = image else {
+        return serde_json::Value::Null;
+    };
+    if system != "nds" {
+        return serde_json::json!({"available": false, "error": "nds_storage_image is supported only for NDS"});
+    }
+    match desmume_nds_launch::admit_storage_image(Path::new(image)) {
+        Ok(path) => serde_json::json!({"available": true, "path": path.display().to_string()}),
+        Err(error) => {
+            serde_json::json!({"available": false, "error": error.to_string(), "path": image})
+        }
+    }
+}
+
 pub(super) fn path_matches_candidates(path: &Path, candidates: Vec<PathBuf>) -> bool {
     candidates
         .iter()
@@ -855,6 +870,17 @@ pub(super) fn adapter_log_path(
 }
 
 pub(crate) fn make_launch_plan(port: Option<u16>, args: &LaunchPlanArgs) -> serde_json::Value {
+    let mut plan = make_launch_plan_inner(port, args);
+    if plan["next_action"]["then_call"]["tool"] == "launch_plan" {
+        if let Some(image) = args.nds_storage_image.as_deref() {
+            plan["next_action"]["then_call"]["arguments"]["nds_storage_image"] =
+                serde_json::json!(image);
+        }
+    }
+    plan
+}
+
+fn make_launch_plan_inner(port: Option<u16>, args: &LaunchPlanArgs) -> serde_json::Value {
     if let Err(error) = emucap::live::runtime::RuntimeStore::discover() {
         return serde_json::json!({"ok": false, "ready_to_launch": false, "error": error.to_string()});
     }
@@ -925,6 +951,10 @@ pub(crate) fn make_launch_plan(port: Option<u16>, args: &LaunchPlanArgs) -> serd
         "system": system,
         "name": format!("{system}_session"),
     });
+    if let Some(image) = args.nds_storage_image.as_deref() {
+        preferred_launcher_args["nds_storage_image"] = serde_json::json!(image);
+    }
+    let nds_storage = nds_storage_precondition(system, args.nds_storage_image.as_deref());
     if adapter_supports_sound(adapter) {
         preferred_launcher_args["sound"] = serde_json::json!(false);
     }
@@ -999,6 +1029,7 @@ pub(crate) fn make_launch_plan(port: Option<u16>, args: &LaunchPlanArgs) -> serd
         _ => serde_json::Value::Null,
     };
     let mut launch_blockers = launch_blockers(content_exists, &adapter_binary);
+    push_unavailable_precondition(&mut launch_blockers, "nds_storage_image", &nds_storage);
     if adapter == "np2kai" && !emucap::launch::np2kai::accepts_content_path(Path::new(content_path))
     {
         launch_blockers.push(
@@ -1108,6 +1139,7 @@ pub(crate) fn make_launch_plan(port: Option<u16>, args: &LaunchPlanArgs) -> serd
             "bridge": bridge,
             "build_required": build_required,
             "bios_required": bios_required,
+            "nds_storage_image": nds_storage,
         },
         "system": system,
         "adapter": adapter,

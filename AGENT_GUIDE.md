@@ -225,6 +225,13 @@ arguments. The agent calls `launch`, which waits for adapter readiness, and
 verifies the resulting live and runtime identities with `status`. Launcher
 scripts are developer entry points, not an alternative managed lifecycle.
 
+For NDS DLDI homebrew, `launch_plan(..., nds_storage_image="/path/to/card.img")`
+and `launch` accept an existing writable raw CompactFlash image. Echo the plan's
+preferred arguments, use one writable image per emulator and check the returned
+`nds_storage_image` path. Invalid or non-NDS requests fail before replacement.
+See the DeSmuME adapter's storage and forced-stop persistence requirements in
+`adapters/desmume-nds/README.md` before inspecting or reusing a changed image.
+
 Managed CUE, GDI, CCD, TOC, and M3U entries are closed media graphs. Selecting a descriptor authorizes
 only that entry. `launch_plan` returns `review_input` with the exact relative member names before it
 reads their metadata, content, or hashes; review each name and echo only the server-produced

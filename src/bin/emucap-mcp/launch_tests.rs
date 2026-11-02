@@ -337,6 +337,7 @@ fn launch_plan_exposes_only_the_mcp_launcher() {
             content_path: Some("/tmp/game.iso".into()),
             system: Some("ps2".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -453,6 +454,7 @@ fn launch_plan_for_xbox_makes_hidden_audio_an_explicit_choice() {
             content_path: Some("/tmp/game.iso".into()),
             system: Some("xbox".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -616,6 +618,7 @@ fn launch_plan_for_neogeo_aes_requires_software_list_media_and_aes_bios() {
             content_path: Some("/tmp/mslug2.zip".into()),
             system: Some("neogeo_aes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -641,6 +644,7 @@ fn launch_plan_for_neogeo_cd_requires_explicit_cue_and_cdz_bios() {
             content_path: Some("/tmp/disc.cue".into()),
             system: Some("neogeo_cd".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -834,6 +838,7 @@ fn launch_plan_without_content_requests_only_the_content_path() {
             content_path: None,
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -859,6 +864,7 @@ fn launch_plan_with_ambiguous_media_preserves_content_and_requests_system() {
             content_path: Some(content_path.into()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -893,6 +899,7 @@ fn launch_plan_blocks_a_cue_graph_that_escapes_its_directory() {
             content_path: Some(cue.display().to_string()),
             system: Some("saturn".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -920,6 +927,7 @@ fn launch_plan_blocks_a_gdi_graph_that_escapes_its_directory() {
             content_path: Some(gdi.display().to_string()),
             system: Some("dc".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -938,6 +946,7 @@ fn launch_plan_reviews_indirect_members_before_checking_their_files() {
             content_path: Some(cue.display().to_string()),
             system: Some("saturn".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -961,6 +970,7 @@ fn launch_plan_reviews_indirect_members_before_checking_their_files() {
             content_path: Some(cue.display().to_string()),
             system: Some("saturn".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: Some(approval),
         },
     );
@@ -979,6 +989,7 @@ fn launch_plan_with_explicit_system_and_no_content_preserves_system() {
             content_path: None,
             system: Some("nes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1005,6 +1016,7 @@ fn launch_plan_for_nes_uses_mesen2_and_nes_entry() {
             content_path: Some("/tmp/game.nes".into()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1028,6 +1040,7 @@ fn launch_plan_for_gameboy_family_uses_mesen2_and_gb_entry() {
                 content_path: Some(format!("/tmp/game.{ext}")),
                 system: None,
                 pc98_backend: None,
+                nds_storage_image: None,
                 indirect_media_approval: None,
             },
         );
@@ -1067,6 +1080,7 @@ fn launch_plan_for_md_uses_mednafen_force_module() {
             content_path: Some("/tmp/game.md".into()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1103,6 +1117,7 @@ fn launch_plan_blocks_missing_content_even_with_binary() {
             content_path: Some(missing.display().to_string()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1152,6 +1167,7 @@ fn launch_plan_ready_when_content_and_binary_exist() {
             content_path: Some(rom.display().to_string()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1202,6 +1218,7 @@ fn launch_plan_task_entry_blocker_overrides_local_readiness_and_preserves_replan
         content_path: Some(rom.display().to_string()),
         system: None,
         pc98_backend: None,
+        nds_storage_image: None,
         indirect_media_approval: None,
     };
     let mut plan = make_launch_plan(Some(47804), &args);
@@ -1252,6 +1269,7 @@ fn launch_plan_preserved_failure_action_overrides_local_planning() {
         content_path: Some("/tmp/game.sfc".into()),
         system: Some("snes".into()),
         pc98_backend: None,
+        nds_storage_image: None,
         indirect_media_approval: None,
     };
     let mut plan = serde_json::json!({
@@ -1296,6 +1314,7 @@ fn launch_plan_for_explicit_md_accepts_ambiguous_bin() {
             content_path: Some("/tmp/game.bin".into()),
             system: Some("genesis".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1321,6 +1340,7 @@ fn launch_plan_for_pc98_uses_repo_launcher_and_headless_contract() {
             content_path: Some("/tmp/game.hdi".into()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1372,6 +1392,7 @@ fn launch_plan_for_neogeo_mvs_uses_dedicated_adapter_without_zip_inference() {
             content_path: Some("/tmp/mslug.zip".into()),
             system: Some("neogeo_mvs".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1396,6 +1417,7 @@ fn launch_plan_for_n64_uses_native_mupen64plus_adapter() {
             content_path: Some("/tmp/test.v64".into()),
             system: Some("n64".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1425,6 +1447,7 @@ fn launch_plan_for_saturn_declares_isolated_firmware_and_controlled_start() {
             content_path: Some("/tmp/test.cue".into()),
             system: Some("saturn".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1463,6 +1486,7 @@ fn launch_plan_for_msx_uses_stock_openmsx_bridge() {
             content_path: Some("/tmp/test.rom".into()),
             system: Some("msx".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1484,6 +1508,7 @@ fn launch_plan_for_real_msx_machine_requires_operator_firmware() {
             content_path: Some("/tmp/test.dsk".into()),
             system: Some("msx2".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1502,6 +1527,7 @@ fn pc98_display_selects_visible_mame_launch() {
         content_path2: None,
         system: Some("pc98".into()),
         pc98_backend: None,
+        nds_storage_image: None,
         indirect_media_approval: None,
         name: None,
         display: Some(true),
@@ -1521,6 +1547,128 @@ fn pc98_display_selects_visible_mame_launch() {
 }
 
 #[test]
+fn nds_storage_survives_input_and_task_entry_replanning() {
+    for input in [
+        serde_json::json!({"system": "nds", "nds_storage_image": "selected card.img"}),
+        serde_json::json!({"content_path": "ambiguous.bin", "nds_storage_image": "selected card.img"}),
+        serde_json::json!({"nds_storage_image": "selected card.img"}),
+    ] {
+        let args: LaunchPlanArgs = serde_json::from_value(input).unwrap();
+        let mut plan = make_launch_plan(Some(47804), &args);
+        assert_eq!(
+            plan["next_action"]["then_call"]["arguments"]["nds_storage_image"],
+            "selected card.img"
+        );
+        apply_task_entry_transition(
+            &mut plan,
+            &args,
+            &serde_json::json!({"entry": {"state": "blocked"}}),
+        );
+        assert_eq!(
+            plan["transition"]["then_call"]["arguments"]["nds_storage_image"],
+            "selected card.img"
+        );
+    }
+}
+
+#[test]
+fn nds_storage_plan_preserves_image_and_rejects_invalid_media() {
+    let _guard = env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let content = tmp.path().join("game.nds");
+    let image = tmp.path().join("保存 card.img");
+    std::fs::write(&content, b"rom").unwrap();
+    std::fs::write(&image, b"card").unwrap();
+    let args: LaunchPlanArgs = serde_json::from_value(serde_json::json!({
+        "content_path": content,
+        "system": "nds",
+        "nds_storage_image": image,
+    }))
+    .unwrap();
+    let plan = make_launch_plan(Some(47804), &args);
+    assert_eq!(
+        plan["preferred_launcher"]["args"]["nds_storage_image"],
+        image.display().to_string()
+    );
+    assert_eq!(
+        plan["preconditions"]["nds_storage_image"]["available"], true,
+        "{plan}"
+    );
+    let round_trip: LaunchArgs =
+        serde_json::from_value(plan["preferred_launcher"]["args"].clone()).unwrap();
+    assert_eq!(round_trip.content_path, content.display().to_string());
+    assert_eq!(round_trip.nds_storage_image.as_deref(), image.to_str());
+
+    for (system, path) in [
+        ("nds", tmp.path().join("missing.img")),
+        ("nds", tmp.path().to_path_buf()),
+        ("snes", image.clone()),
+    ] {
+        let args = serde_json::from_value(
+            serde_json::json!({"content_path":content,"system":system,"nds_storage_image":path}),
+        )
+        .unwrap();
+        let plan = make_launch_plan(Some(47804), &args);
+        assert_eq!(plan["ready_to_launch"], false, "{plan}");
+        assert_eq!(
+            plan["preconditions"]["nds_storage_image"]["available"], false,
+            "{plan}"
+        );
+        assert_eq!(
+            plan["next_action"]["then_call"]["arguments"]["nds_storage_image"],
+            path.display().to_string()
+        );
+    }
+    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&image, permissions).unwrap();
+    let plan = make_launch_plan(Some(47804), &args);
+    assert_eq!(
+        plan["preconditions"]["nds_storage_image"]["available"], false,
+        "{plan}"
+    );
+    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
+    permissions.set_readonly(false);
+    std::fs::set_permissions(&image, permissions).unwrap();
+}
+
+#[test]
+fn nds_storage_launch_rejects_invalid_requests_before_adapter_start() {
+    let _guard = env_lock();
+    let tmp = tempfile::tempdir().unwrap();
+    let _env = EnvRestore::new(&["EMUCAP_EMU_HOME"]);
+    std::env::set_var("EMUCAP_EMU_HOME", tmp.path().join("emu-home"));
+    let content = tmp.path().join("game.nds");
+    let image = tmp.path().join("readonly.img");
+    std::fs::write(&content, b"rom").unwrap();
+    std::fs::write(&image, b"card").unwrap();
+    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&image, permissions).unwrap();
+    for (system, path) in [
+        ("nds", tmp.path().join("missing.img")),
+        ("nds", tmp.path().to_path_buf()),
+        ("nds", image.clone()),
+        ("snes", image.clone()),
+    ] {
+        let args: LaunchArgs = serde_json::from_value(serde_json::json!({
+            "content_path": content, "system": system, "nds_storage_image":path, "replace":true,
+        }))
+        .unwrap();
+        let mut link = NotConnectedPortLink::new();
+        let outcome = make_launch(&mut link, &args);
+        assert_eq!(
+            outcome["reason"], "nds_storage_image admission failed",
+            "{outcome}"
+        );
+        assert_eq!(link.calls, 1, "only the preflight status call is allowed");
+    }
+    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
+    permissions.set_readonly(false);
+    std::fs::set_permissions(&image, permissions).unwrap();
+}
+
+#[test]
 fn launch_plan_for_nds_uses_desmume_adapter_and_mcp_launcher() {
     // .nds routes to the desmume_nds adapter (headless desmume-cli + NDS GDB bridge) with no
     // force_module; extension inference needs no header evidence. Preferred launcher is the MCP
@@ -1531,6 +1679,7 @@ fn launch_plan_for_nds_uses_desmume_adapter_and_mcp_launcher() {
             content_path: Some("/tmp/game.nds".into()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -1591,6 +1740,7 @@ fn launch_plan_for_psp_uses_ppsspp_adapter_and_mcp_launcher() {
             content_path: Some("/tmp/game.cso".into()),
             system: None,
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -2074,6 +2224,7 @@ fn launch_recovers_retired_generation_and_cleans_exact_bridge_orphan() {
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: Some("after-orphan".into()),
             display: None,
@@ -2107,6 +2258,7 @@ fn launch_recovers_retired_generation_and_cleans_exact_bridge_orphan() {
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: Some("after-unverifiable-lease".into()),
             display: None,
@@ -2133,6 +2285,7 @@ fn launch_recovers_retired_generation_and_cleans_exact_bridge_orphan() {
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: Some("after-retired-generation".into()),
             display: None,
@@ -2186,6 +2339,7 @@ fn successful_launch_publishes_generation_and_refuses_duplicate() {
         content_path2: None,
         system: Some("snes".into()),
         pc98_backend: None,
+        nds_storage_image: None,
         indirect_media_approval: None,
         name: Some("capsule-test".into()),
         display: None,
@@ -2259,6 +2413,33 @@ fn successful_launch_publishes_generation_and_refuses_duplicate() {
     );
 
     args.replace = true;
+    let storage = tmp.path().join("card.img");
+    std::fs::write(&storage, b"card").unwrap();
+    let readonly_storage = tmp.path().join("readonly.img");
+    std::fs::write(&readonly_storage, b"card").unwrap();
+    let mut permissions = std::fs::metadata(&readonly_storage).unwrap().permissions();
+    permissions.set_readonly(true);
+    std::fs::set_permissions(&readonly_storage, permissions).unwrap();
+    for (system, image) in [
+        ("nds", tmp.path().join("missing.img")),
+        ("nds", tmp.path().to_path_buf()),
+        ("nds", readonly_storage),
+        ("snes", storage),
+    ] {
+        let mut invalid = args.clone();
+        invalid.system = Some(system.into());
+        invalid.nds_storage_image = Some(image.display().to_string());
+        let outcome = make_launch(&mut link, &invalid);
+        assert_eq!(
+            outcome["reason"], "nds_storage_image admission failed",
+            "{outcome}"
+        );
+        assert_eq!(
+            store.read_current(port).unwrap().unwrap().launch_id,
+            launch_id
+        );
+        assert_eq!(current.process_state(), ProcessState::Alive);
+    }
     link.lease_state = LeaseState::Occupied;
     let occupied = make_launch(&mut link, &args);
     assert_eq!(occupied["launched"], false, "{occupied}");
@@ -2330,6 +2511,7 @@ fn controlled_launch_publishes_only_after_a_frozen_ready_boundary() {
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: Some("controlled-launch-test".into()),
             display: None,
@@ -2381,6 +2563,7 @@ fn controlled_launch_fails_closed_and_terminates_a_running_entry() {
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: Some("controlled-launch-failure-test".into()),
             display: None,
@@ -2500,6 +2683,7 @@ fn dolphin_audio_failure_terminates_only_the_owned_launch_and_aborts_admission()
             content_path2: None,
             system: Some("gamecube".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: Some("audio-failure-test".into()),
             display: Some(false),
@@ -2656,6 +2840,7 @@ fn launch_refuses_missing_content_before_binary_resolution() {
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -2693,6 +2878,7 @@ fn launch_refuses_descriptor_members_without_plan_approval() {
             content_path2: None,
             system: Some("saturn".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -2726,6 +2912,7 @@ fn launch_rejects_sound_for_unsupported_adapter_before_binary_resolution() {
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -2760,6 +2947,7 @@ fn launch_rejects_pc98_sound_board_for_other_systems_before_binary_resolution() 
             content_path2: None,
             system: Some("snes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -2815,6 +3003,7 @@ fn controlled_launch_refuses_an_unsupported_adapter_before_spawn() {
             content_path2: None,
             system: Some("n64".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -2849,6 +3038,7 @@ fn repeatable_profile_refuses_an_unadvertised_system_before_spawn() {
             content_path2: None,
             system: Some("nes".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -2902,6 +3092,7 @@ fn launch_refuses_missing_adapter_binary_with_precondition() {
             content_path2: None,
             system: Some("dc".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -2979,6 +3170,7 @@ fn launch_refuses_missing_pc98_bridge_with_precondition() {
             content_path2: None,
             system: Some("pc98".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -3032,6 +3224,7 @@ fn launch_refuses_occupied_port_before_spawn() {
             content_path2: None,
             system: Some("md".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: None,
             display: None,
@@ -3109,6 +3302,7 @@ fn launch_refuses_when_this_session_already_connected() {
             content_path2: None,
             system: Some("pc98".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
             name: Some("dup-B".into()),
             display: None,
@@ -3160,6 +3354,7 @@ fn pc98_backend_defaults_to_mame_even_when_hdi_geometry_recommends_np2kai() {
             content_path: Some(hdi.display().to_string()),
             system: Some("pc98".into()),
             pc98_backend: None,
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -3183,6 +3378,7 @@ fn explicit_np2kai_selection_changes_only_the_pc98_backend() {
             content_path: Some(hdi.display().to_string()),
             system: Some("pc98".into()),
             pc98_backend: Some(Pc98BackendArgs::Np2kai),
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -3199,6 +3395,7 @@ fn explicit_np2kai_selection_changes_only_the_pc98_backend() {
             content_path: Some(hdi.display().to_string()),
             system: Some("snes".into()),
             pc98_backend: Some(Pc98BackendArgs::Np2kai),
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );
@@ -3220,6 +3417,7 @@ fn explicit_np2kai_selection_rejects_non_hdi_media_during_planning() {
             content_path: Some(hdm.display().to_string()),
             system: Some("pc98".into()),
             pc98_backend: Some(Pc98BackendArgs::Np2kai),
+            nds_storage_image: None,
             indirect_media_approval: None,
         },
     );

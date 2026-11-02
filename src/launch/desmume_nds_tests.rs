@@ -81,6 +81,7 @@ fn make_executable(path: &Path) {
 
 fn launch_for<'a>(binary: &'a Path, bridge: &'a Path, log: &'a Path) -> Launch<'a> {
     Launch {
+        storage_image: None,
         binary,
         bridge,
         content: "/roms/game.nds",
@@ -122,6 +123,41 @@ fn gdb_port_env_override_rejects_non_numeric() {
     std::env::set_var("NDS_ARM7_GDB_PORT", "not-a-port");
     let err = resolve_gdb_port("NDS_ARM7_GDB_PORT").unwrap_err();
     assert_eq!(err.kind(), std::io::ErrorKind::InvalidInput);
+}
+
+#[test]
+fn storage_admission_keeps_image_unchanged_and_uses_a_native_absolute_path() {
+    let dir = tempfile::tempdir().unwrap();
+    let image = dir.path().join("保存 card.img");
+    std::fs::write(&image, b"card contents").unwrap();
+    let admitted = super::admit_storage_image(&image).unwrap();
+    assert!(admitted.is_absolute());
+    assert_eq!(std::fs::read(&admitted).unwrap(), b"card contents");
+    #[cfg(windows)]
+    assert!(!admitted.to_str().unwrap().starts_with(r"\\?\"));
+}
+
+#[test]
+fn emu_spec_passes_storage_image_as_one_argument() {
+    let dir = tempfile::tempdir().unwrap();
+    let binary = dir.path().join("desmume-cli");
+    let bridge = dir.path().join("bridge");
+    let log = dir.path().join("nds.log");
+    let image = dir.path().join("保存 card.img");
+    let mut launch = launch_for(&binary, &bridge, &log);
+    launch.storage_image = Some(&image);
+    let spec = emu_spec(&launch, 48800, 48801, "native-debug-token");
+    assert_eq!(
+        &spec.args[5..],
+        &["--cflash-image", image.to_str().unwrap(), "/roms/game.nds"]
+    );
+    assert_eq!(
+        spec.args
+            .iter()
+            .filter(|arg| *arg == "--cflash-image")
+            .count(),
+        1
+    );
 }
 
 #[test]
