@@ -1619,7 +1619,8 @@ fn nds_storage_plan_preserves_image_and_rejects_invalid_media() {
             path.display().to_string()
         );
     }
-    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
+    let original_permissions = std::fs::metadata(&image).unwrap().permissions();
+    let mut permissions = original_permissions.clone();
     permissions.set_readonly(true);
     std::fs::set_permissions(&image, permissions).unwrap();
     let plan = make_launch_plan(Some(47804), &args);
@@ -1627,9 +1628,7 @@ fn nds_storage_plan_preserves_image_and_rejects_invalid_media() {
         plan["preconditions"]["nds_storage_image"]["available"], false,
         "{plan}"
     );
-    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
-    permissions.set_readonly(false);
-    std::fs::set_permissions(&image, permissions).unwrap();
+    std::fs::set_permissions(&image, original_permissions).unwrap();
 }
 
 #[test]
@@ -1642,7 +1641,8 @@ fn nds_storage_launch_rejects_invalid_requests_before_adapter_start() {
     let image = tmp.path().join("readonly.img");
     std::fs::write(&content, b"rom").unwrap();
     std::fs::write(&image, b"card").unwrap();
-    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
+    let original_permissions = std::fs::metadata(&image).unwrap().permissions();
+    let mut permissions = original_permissions.clone();
     permissions.set_readonly(true);
     std::fs::set_permissions(&image, permissions).unwrap();
     for (system, path) in [
@@ -1663,9 +1663,7 @@ fn nds_storage_launch_rejects_invalid_requests_before_adapter_start() {
         );
         assert_eq!(link.calls, 1, "only the preflight status call is allowed");
     }
-    let mut permissions = std::fs::metadata(&image).unwrap().permissions();
-    permissions.set_readonly(false);
-    std::fs::set_permissions(&image, permissions).unwrap();
+    std::fs::set_permissions(&image, original_permissions).unwrap();
 }
 
 #[test]
