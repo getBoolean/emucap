@@ -971,6 +971,10 @@ pub(crate) struct AnalysisArgs {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LaunchPlanArgs {
+    /// Writable raw CompactFlash image for NDS homebrew, attached with DeSmuME's
+    /// MPCF DLDI driver. Omit to keep the default NDS launch without card storage.
+    #[serde(default)]
+    pub(crate) nds_storage_image: Option<String>,
     /// ROM, disc, or disk path to launch. Omit when unknown and use the returned
     /// system identifiers and required_user_input fields.
     #[serde(default)]
@@ -992,6 +996,10 @@ pub(crate) struct LaunchPlanArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LaunchArgs {
+    /// Writable raw CompactFlash image for NDS homebrew. Validated before any
+    /// managed generation is replaced; the caller owns the image's lifetime.
+    #[serde(default)]
+    pub(crate) nds_storage_image: Option<String>,
     /// Required ROM, disc, or disk path. launch performs execution, not planning.
     pub(crate) content_path: String,
     /// Optional second disc or disk for titles that must boot with two media
