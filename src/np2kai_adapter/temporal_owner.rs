@@ -152,7 +152,7 @@ impl Np2kaiHost {
         Ok(self.handle_request_cancellable(request, cancellation))
     }
     fn require_owned_healthy(&self) -> Np2kaiResult<()> {
-        if self.backend_terminal() || !self.launch_id.is_some() {
+        if self.backend_terminal() || self.launch_id.is_none() {
             return Err(Np2kaiError::BadState(
                 "owned native control is unavailable".into(),
             ));

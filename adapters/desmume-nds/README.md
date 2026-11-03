@@ -50,6 +50,24 @@ The launcher starts desmume-cli headless (`--arm9gdb <p9> --arm7gdb <p7>`), wait
 to open, then attaches the bridge. **No NDS BIOS or firmware is needed** — DeSmuME's HLE BIOS and
 direct-boot boot commercial ROMs.
 
+For DLDI homebrew with writable card storage, pass `nds_storage_image` to both
+`launch_plan` and `launch` (or echo the plan's `preferred_launcher.args`). It must
+name an existing writable raw FAT/CompactFlash image. Managed launch validates it
+before replacing an existing generation, passes it as one `--cflash-image` path
+argument and reports the admitted absolute path as `nds_storage_image`. DeSmuME
+attaches its MPCF device and can autopatch a compatible homebrew DLDI stub; use
+matching MPCF loader assets when the homebrew chainloads another ROM. Omitting
+the option keeps the ordinary NDS launch unchanged. Other systems reject it.
+
+The caller owns the image: use a separate writable copy for each concurrent
+session. Savestates do not roll back its contents. Managed stop forcibly exits
+the emulator rather than closing the card normally; the native backend buffers
+its last sector write. Before using an image as persistence evidence, finish the
+guest save and confirm a subsequent real card read completed, then stop and
+confirm process exit before inspecting or copying it. A filesystem-cache hit is
+not a card-read witness. Retain unconfirmed failure images as potentially
+unflushed, rather than treating them as clean checkpoints.
+
 Each accepted GDB connection has bounded send/receive waits. Packet transmission and ACK handling
 share a two-second total deadline and at most three attempts; a timeout closes only that GDB
 connection and resets the packet reader so a replacement bridge can attach without restarting
@@ -189,6 +207,13 @@ guest runs, so status polling does not pause a slow guest. `status.frame` is the
 a frame step that spends the host budget returns `reason: "host_deadline"`.
 
 ## Operational notes
+
+Patch 0026 aligns LDM exception-return addresses using SPSR.T. Interrupt returns
+to an even Thumb address ending in binary `10` must preserve bit 1; using the
+loaded address's bit 0 replays the preceding instruction and can corrupt a guest
+stack. The build runs 128 production instruction-handler checks covering both
+CPUs, all eight LDM return forms, both saved instruction sets, and all address
+low-bit combinations.
 
 - **Halt-on-start**: the stubs start stopped. Drive with `resume` / `step` after the bridge attaches.
 - **Ignores SIGTERM**: desmume-cli doesn't die on `kill` (SIGTERM) — the launcher escalates to SIGKILL.

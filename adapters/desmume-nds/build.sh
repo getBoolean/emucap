@@ -43,6 +43,8 @@ PATCH21="$HERE/patches/0021-select-windows-jit-memory.patch"
 PATCH22="$HERE/patches/0022-preserve-render-history.patch"
 PATCH23="$HERE/patches/0023-emucap-gdb-loopback-auth.patch"
 PATCH24="$HERE/patches/0024-emucap-gdb-candidate-admission.patch"
+PATCH25="$HERE/patches/0025-mpcf-command-status.patch"
+PATCH26="$HERE/patches/0026-ldm-exception-return-alignment.patch"
 WORK_INPUT="${EMUCAP_DESMUME_WORK:-$HERE/work}"
 [ ! -L "$WORK_INPUT" ] || { echo "ERROR: DeSmuME work path must not be a symlink: $WORK_INPUT" >&2; exit 1; }
 mkdir -p "$WORK_INPUT"
@@ -65,18 +67,20 @@ JOBS="${DESMUME_JOBS:-$(getconf _NPROCESSORS_ONLN 2>/dev/null || echo 4)}"
 [ -f "$PATCH11" ] || { echo "ERROR: emucap VBlank frame-step patch not found: $PATCH11" >&2; exit 1; }
 [ -f "$PATCH12" ] || { echo "ERROR: emucap agent pacing patch not found: $PATCH12" >&2; exit 1; }
 [ -f "$PATCH23" ] || { echo "ERROR: emucap GDB authentication patch not found: $PATCH23" >&2; exit 1; }
+[ -f "$PATCH25" ] || { echo "ERROR: MPCF command/status patch not found: $PATCH25" >&2; exit 1; }
+[ -f "$PATCH26" ] || { echo "ERROR: LDM exception return patch not found: $PATCH26" >&2; exit 1; }
 
 if command -v shasum >/dev/null 2>&1; then
   ACTUAL_PATCHSET_SHA256="$(
     for patch in "$PATCH" "$PATCH2" "$PATCH3" "$PATCH4" "$PATCH5" \
-      "$PATCH6" "$PATCH7" "$PATCH8" "$PATCH9" "$PATCH10" "$PATCH11" "$PATCH12" "$PATCH13" "$PATCH14" "$PATCH15" "$PATCH16" "$PATCH17" "$PATCH18" "$PATCH19" "$PATCH20" "$PATCH21" "$PATCH22" "$PATCH23" "$PATCH24"; do
+      "$PATCH6" "$PATCH7" "$PATCH8" "$PATCH9" "$PATCH10" "$PATCH11" "$PATCH12" "$PATCH13" "$PATCH14" "$PATCH15" "$PATCH16" "$PATCH17" "$PATCH18" "$PATCH19" "$PATCH20" "$PATCH21" "$PATCH22" "$PATCH23" "$PATCH24" "$PATCH25" "$PATCH26"; do
       cat "$patch"
     done | shasum -a 256 | awk '{print $1}'
   )"
 elif command -v sha256sum >/dev/null 2>&1; then
   ACTUAL_PATCHSET_SHA256="$(
     for patch in "$PATCH" "$PATCH2" "$PATCH3" "$PATCH4" "$PATCH5" \
-      "$PATCH6" "$PATCH7" "$PATCH8" "$PATCH9" "$PATCH10" "$PATCH11" "$PATCH12" "$PATCH13" "$PATCH14" "$PATCH15" "$PATCH16" "$PATCH17" "$PATCH18" "$PATCH19" "$PATCH20" "$PATCH21" "$PATCH22" "$PATCH23" "$PATCH24"; do
+      "$PATCH6" "$PATCH7" "$PATCH8" "$PATCH9" "$PATCH10" "$PATCH11" "$PATCH12" "$PATCH13" "$PATCH14" "$PATCH15" "$PATCH16" "$PATCH17" "$PATCH18" "$PATCH19" "$PATCH20" "$PATCH21" "$PATCH22" "$PATCH23" "$PATCH24" "$PATCH25" "$PATCH26"; do
       cat "$patch"
     done | sha256sum | awk '{print $1}'
   )"
@@ -146,7 +150,7 @@ git checkout -- .
 for patch in "$PATCH" "$PATCH2" "$PATCH3" "$PATCH4" "$PATCH5" \
   "$PATCH6" "$PATCH7" "$PATCH8" "$PATCH9" "$PATCH10" "$PATCH11" "$PATCH12" \
   "$PATCH13" "$PATCH14" "$PATCH15" "$PATCH16" "$PATCH17" "$PATCH18" \
-  "$PATCH19" "$PATCH20" "$PATCH21" "$PATCH22" "$PATCH23" "$PATCH24"; do
+  "$PATCH19" "$PATCH20" "$PATCH21" "$PATCH22" "$PATCH23" "$PATCH24" "$PATCH25" "$PATCH26"; do
   while IFS= read -r added_file; do
     case "$added_file" in
       desmume/*) rm -f -- "$added_file" ;;
@@ -181,7 +185,9 @@ for entry in \
   "$PATCH21|Windows JIT memory selection patch (0021)" \
   "$PATCH22|Exact geometry render history patch (0022)" \
   "$PATCH23|GDB loopback authentication patch (0023)" \
-  "$PATCH24|GDB bounded candidate admission patch (0024)"; do
+  "$PATCH24|GDB bounded candidate admission patch (0024)" \
+  "$PATCH25|MPCF command/status register patch (0025)" \
+  "$PATCH26|LDM exception return alignment patch (0026)"; do
   patch="${entry%%|*}"
   label="${entry#*|}"
   echo "→ applying $label"
@@ -208,6 +214,7 @@ echo "→ meson setup $RECONFIGURE ($BUILD)"
     -Dfrontend-gtk=false -Dfrontend-gtk2=false -Dwifi=false )
 echo "→ ninja (-j$JOBS)"
 ninja -C "$BUILD" -j"$JOBS"
+meson test -C "$BUILD" ldm-exception-return --print-errorlogs
 
 BIN="$BUILD/cli/desmume-cli"
 case "$(uname -s)" in MINGW*|MSYS*) BIN="$BIN.exe" ;; esac

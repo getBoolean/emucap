@@ -1,0 +1,141 @@
+--- a/desmume/src/arm_instructions.cpp
++++ b/desmume/src/arm_instructions.cpp
+@@ -5173,7 +5173,7 @@
+     
+ 		u32 tmp = READ32(cpu->mem_if->data, start);
+ 		Status_Reg SPSR;
+-		cpu->R[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++		cpu->R[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 		SPSR = cpu->SPSR;
+ 		armcpu_switchMode(cpu, SPSR.bits.mode);
+ 		cpu->CPSR=SPSR;
+@@ -5235,7 +5235,7 @@
+ 		Status_Reg SPSR;
+ 		start += 4;
+ 		tmp = READ32(cpu->mem_if->data, start);
+-		registres[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++		registres[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 		SPSR = cpu->SPSR;
+ 		armcpu_switchMode(cpu, SPSR.bits.mode);
+ 		cpu->CPSR=SPSR;
+@@ -5274,7 +5274,7 @@
+ 	if(BIT15(i))
+ 	{
+ 		u32 tmp = READ32(cpu->mem_if->data, start);
+-		registres[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++		registres[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 		cpu->CPSR = cpu->SPSR;
+ 		armcpu_changeCPSR();
+ 		c += MMU_memAccessCycles<PROCNUM,32,MMU_AD_READ>(start);
+@@ -5339,7 +5339,7 @@
+ 		u32 tmp;
+ 		start -= 4;
+ 		tmp = READ32(cpu->mem_if->data, start);
+-		registres[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++		registres[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 		cpu->CPSR = cpu->SPSR;
+ 		armcpu_changeCPSR();
+ 		cpu->next_instruction = registres[15];
+@@ -5428,7 +5428,7 @@
+ 	if (!BIT_N(i, REG_POS(i,16)))
+ 		registres[REG_POS(i,16)] = start + 4;
+ 	tmp = READ32(cpu->mem_if->data, start);
+-	registres[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++	registres[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 	SPSR = cpu->SPSR;
+ 	armcpu_switchMode(cpu, SPSR.bits.mode);
+ 	cpu->CPSR=SPSR;
+@@ -5485,7 +5485,7 @@
+ 	if (!BIT_N(i, REG_POS(i,16)))
+ 		registres[REG_POS(i,16)] = start + 4;
+ 	tmp = READ32(cpu->mem_if->data, start + 4);
+-	registres[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++	registres[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 	cpu->CPSR = cpu->SPSR;
+ 	armcpu_changeCPSR();
+ 	cpu->next_instruction = registres[15];
+@@ -5519,7 +5519,7 @@
+ 	{
+ 		if (BIT_N(i, REG_POS(i,16))) printf("error1_1\n");
+ 		u32 tmp = READ32(cpu->mem_if->data, start);
+-		registres[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++		registres[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 		c += MMU_memAccessCycles<PROCNUM,32,MMU_AD_READ>(start);
+ 		start -= 4;
+ 		cpu->next_instruction = registres[15];
+@@ -5581,7 +5581,7 @@
+ 		start -= 4;
+ 		tmp = READ32(cpu->mem_if->data, start);
+ 		c += MMU_memAccessCycles<PROCNUM,32,MMU_AD_READ>(start);
+-		registres[15] = tmp & (0XFFFFFFFC | (BIT0(tmp)<<1));
++		registres[15] = tmp & (cpu->SPSR.bits.T ? 0xFFFFFFFEu : 0xFFFFFFFCu);
+ 		cpu->CPSR = cpu->SPSR;
+ 		armcpu_changeCPSR();
+ 		cpu->next_instruction = registres[15];
+--- a/desmume/src/frontend/posix/cli/meson.build
++++ b/desmume/src/frontend/posix/cli/meson.build
+@@ -27,3 +27,11 @@
+ )
+ 
+ install_man('doc/desmume-cli.1')
++
++ldm_test = executable('ldm-exception-return-test',
++  'ldm_exception_return.cpp',
++  dependencies: cli_dependencies,
++  include_directories: includes,
++  link_with: libdesmume,
++)
++test('ldm-exception-return', ldm_test)
+--- /dev/null
++++ b/desmume/src/frontend/posix/cli/ldm_exception_return.cpp
+@@ -0,0 +1,50 @@
++#include <SDL.h>
++#include "armcpu.h"
++#include "MMU.h"
++#include "instructions.h"
++#include "SPU.h"
++#include "render3D.h"
++#include <cstdio>
++#include <cstdlib>
++
++// Frontend services are unused by these instruction-level checks.
++volatile bool execute = false;
++SoundInterface_struct* SNDCoreList[] = {&SNDDummy, nullptr};
++GPU3DInterface* core3DList[] = {&gpu3DNull, nullptr};
++void* createThread_gdb(void (*)(void*), void*) { std::abort(); }
++void joinThread_gdb(void*) { std::abort(); }
++
++static u32 savedPc;
++static u32 read32(void*, u32) { return savedPc; }
++int main(int, char**)
++{
++    armcpu_memory_iface memory = {};
++    memory.read32 = read32;
++    int failures = 0;
++    const u32 forms[] = {0xe8d48000, 0xe9d48000, 0xe8548000, 0xe9548000,
++                         0xe8f48000, 0xe9f48000, 0xe8748000, 0xe9748000};
++    for (int proc = 0; proc < 2; ++proc)
++    for (u32 opcode : forms)
++    for (u32 thumb : {0u, 1u})
++    for (u32 target : {0x037fe700u, 0x037fe701u, 0x037fe702u, 0x037fe703u})
++    {
++        armcpu_t& cpu = proc ? NDS_ARM7 : NDS_ARM9;
++        cpu.proc_ID = proc;
++        cpu.CPSR.val = 0x92;
++        cpu.SPSR.val = 0x6000001f | (thumb << 5);
++        cpu.mem_if = &memory;
++        cpu.R[4] = 0x02001000;
++        cpu.runToRet = false;
++        savedPc = target;
++        arm_instructions_set[proc][INSTRUCTION_INDEX(opcode)](opcode);
++        const u32 expected = target & (thumb ? 0xfffffffeu : 0xfffffffcu);
++        if (cpu.R[15] != expected || cpu.next_instruction != expected || cpu.CPSR.val != (0x6000001f | (thumb << 5)))
++        {
++            fprintf(stderr, "ARM%d opcode=%08x T=%u target=%08x expected=%08x actual=%08x cpsr=%08x\n",
++                    proc ? 7 : 9, opcode, thumb, target, expected, cpu.next_instruction, cpu.CPSR.val);
++            ++failures;
++        }
++    }
++    printf("LDM exception return: %d failures across 128 cases\n", failures);
++    return failures ? 1 : 0;
++}

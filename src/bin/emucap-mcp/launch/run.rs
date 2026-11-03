@@ -147,6 +147,14 @@ pub(crate) fn make_launch(
             "inference": inference,
         });
     };
+    let nds_storage = nds_storage_precondition(system, a.nds_storage_image.as_deref());
+    if nds_storage["available"] == false {
+        return serde_json::json!({
+            "launched": false,
+            "reason": "nds_storage_image admission failed",
+            "preconditions": {"nds_storage_image": nds_storage},
+        });
+    }
     if a.pc98_backend.is_some() && system != "pc98" {
         return serde_json::json!({
             "launched": false,
@@ -314,12 +322,15 @@ pub(crate) fn make_launch(
             })
         }
     };
-    let bound_content =
+    let mut bound_content =
         match super::media::bind_approved_content(a, adapter, content_identity.as_ref(), &prepared)
         {
             Ok(bound) => bound,
             Err(response) => return response,
         };
+    if let Some(image) = nds_storage["path"].as_str() {
+        bound_content.args.nds_storage_image = Some(image.to_string());
+    }
     let effective_args = &bound_content.args;
 
     let before_signal = match store.read_current(port) {
@@ -843,6 +854,7 @@ pub(super) fn launch_desmume_nds(
     runtime: RuntimeEnv<'_>,
     a: &LaunchArgs,
 ) -> serde_json::Value {
+    let storage_image = a.nds_storage_image.as_deref().map(Path::new);
     let Some(root) = find_repo_root() else {
         return serde_json::json!({ "launched": false, "error": "emucap repository root was not found; set EMUCAP_REPO_ROOT" });
     };
@@ -858,6 +870,7 @@ pub(super) fn launch_desmume_nds(
     };
     let display = a.display.unwrap_or(false);
     let spec = desmume_nds_launch::Launch {
+        storage_image,
         binary: &binary,
         bridge: &bridge,
         content: &a.content_path,
@@ -872,6 +885,7 @@ pub(super) fn launch_desmume_nds(
         Ok(launched) => serde_json::json!({
             "launched": true,
             "adapter": "desmume_nds",
+            "nds_storage_image": storage_image.map(|path| path.display().to_string()),
             "pid": launched.desmume_pid,
             "desmume_pid": launched.desmume_pid,
             "bridge_pid": launched.bridge_pid,

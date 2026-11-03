@@ -1,0 +1,119 @@
+name: Validate Pico core packages
+
+on:
+  workflow_dispatch:
+  workflow_call:
+    inputs:
+      revision:
+        required: true
+        type: string
+      version:
+        required: false
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+jobs:
+  resolve:
+    runs-on: ubuntu-22.04
+    outputs:
+      revision: ${{ steps.source.outputs.revision }}
+      version: ${{ steps.source.outputs.version }}
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ inputs.revision || github.sha }}
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - id: source
+        env:
+          EXPECTED_VERSION: ${{ inputs.version }}
+        run: |
+          revision=$(git rev-parse HEAD)
+          version=$(python3 -c 'import tomllib; print(tomllib.load(open("Cargo.toml", "rb"))["package"]["version"])')
+          test -z "$EXPECTED_VERSION" || test "$version" = "$EXPECTED_VERSION"
+          echo "revision=$revision" >> "$GITHUB_OUTPUT"
+          echo "version=$version" >> "$GITHUB_OUTPUT"
+
+  build:
+    needs: resolve
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - os: ubuntu-22.04
+            target: x86_64-unknown-linux-gnu
+            test_threads: 4
+          - os: windows-2022
+            target: x86_64-pc-windows-msvc
+            test_threads: 1
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 45
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.revision }}
+          path: packaging
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ needs.resolve.outputs.revision }}
+          path: source
+      - uses: dtolnay/rust-toolchain@686976e191b89faba57d3206551f0f330d8cb249 # stable
+        with:
+          toolchain: stable
+          components: rustfmt, clippy
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: '3.12'
+      - name: Check formatting
+        working-directory: source
+        run: cargo fmt --all -- --check
+      - name: Test shared behavior
+        timeout-minutes: 15
+        working-directory: source
+        env:
+          RUST_TEST_THREADS: ${{ matrix.test_threads }}
+        run: cargo test --locked --release --target ${{ matrix.target }} --all-targets -- --nocapture
+      - name: Check lints
+        working-directory: source
+        run: cargo clippy --locked --release --target ${{ matrix.target }} --all-targets -- -D warnings
+      - name: Build core and adapter host executables
+        working-directory: source
+        run: cargo build --locked --release --target ${{ matrix.target }} --bins
+      - name: Package and validate on the target OS
+        run: python packaging/_tests/release/package_core.py --source source --target ${{ matrix.target }} --version ${{ needs.resolve.outputs.version }} --revision ${{ needs.resolve.outputs.revision }} --output artifacts
+      - uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: core-${{ matrix.target }}
+          path: artifacts/*
+          if-no-files-found: error
+      - name: Stage Windows adapter hosts
+        if: runner.os == 'Windows'
+        shell: pwsh
+        working-directory: source
+        run: |
+          $metadata = cargo metadata --locked --no-deps --format-version 1 | ConvertFrom-Json
+          if ($LASTEXITCODE -ne 0) { throw 'Cargo metadata failed' }
+          $package = $metadata.packages | Where-Object { $_.name -eq 'emucap' }
+          $core = @('emucap', 'emucap-mcp', 'emucap-track-mcp', 'emucap-broker')
+          $hosts = $package.targets | Where-Object { 'bin' -in $_.kind -and $_.name -notin $core }
+          if (-not $hosts) { throw 'No adapter host targets found' }
+          New-Item -ItemType Directory ../native-hosts | Out-Null
+          $files = @{}
+          foreach ($hostTarget in $hosts) {
+            $name = "$($hostTarget.name).exe"
+            Copy-Item "target/${{ matrix.target }}/release/$name" ../native-hosts/ -ErrorAction Stop
+            $files[$name] = (Get-FileHash "../native-hosts/$name" -Algorithm SHA256).Hash.ToLowerInvariant()
+          }
+          @{ revision = (git rev-parse HEAD); files = $files } | ConvertTo-Json -Depth 3 | Set-Content ../native-hosts/NATIVE-HOSTS.json
+      - name: Retain Windows adapter hosts
+        if: runner.os == 'Windows'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: native-hosts-windows-x86_64
+          path: native-hosts/
+          retention-days: 7
+          if-no-files-found: error

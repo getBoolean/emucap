@@ -24,7 +24,7 @@ that need filesystem access.
 
 Download both the core and DeSmuME package for your system from the
 [Pico release](https://github.com/getBoolean/emucap/releases/tag/1.1.0-pico.4).
-See the [fork setup and usage notes](https://github.com/getBoolean/emucap/blob/pico/1.1.0-storage/FORK.md)
+See the [fork setup and usage notes](FORK.md)
 for details.
 
 ## What you can do
