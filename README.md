@@ -9,6 +9,24 @@ emulators. Ask your agent to play through a scene, reproduce a bug, or investiga
 what the game is doing. It can inspect the screen, press buttons, advance frames,
 and examine memory through one interface across supported emulators.
 
+## What this fork adds
+
+This fork provides Pico homebrew builds for testing Nintendo DS applications
+that need filesystem access.
+
+- **Storage-backed DS homebrew:** attach a writable CompactFlash image when
+  launching DeSmuME, so applications can read assets and write files.
+- **Pico Loader compatibility:** fixes card detection and interrupt handling
+  that could prevent startup or stall filesystem-heavy tasks such as recursive
+  searches.
+- **Native Windows and Linux packages:** matching emucap and DeSmuME downloads,
+  with checksums and source archives.
+
+Download both the core and DeSmuME package for your system from the
+[Pico release](https://github.com/getBoolean/emucap/releases/tag/1.1.0-pico.4).
+See the [fork setup and usage notes](https://github.com/getBoolean/emucap/blob/pico/1.1.0-storage/FORK.md)
+for details.
+
 ## What you can do
 
 - **Play and observe:** capture screenshots, press or hold buttons, move the mouse,
