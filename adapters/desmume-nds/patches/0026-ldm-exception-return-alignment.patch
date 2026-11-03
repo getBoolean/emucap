@@ -88,7 +88,8 @@
 +test('ldm-exception-return', ldm_test)
 --- /dev/null
 +++ b/desmume/src/frontend/posix/cli/ldm_exception_return.cpp
-@@ -0,0 +1,49 @@
+@@ -0,0 +1,50 @@
++#include <SDL.h>
 +#include "armcpu.h"
 +#include "MMU.h"
 +#include "instructions.h"
@@ -106,7 +107,7 @@
 +
 +static u32 savedPc;
 +static u32 read32(void*, u32) { return savedPc; }
-+int main()
++int main(int, char**)
 +{
 +    armcpu_memory_iface memory = {};
 +    memory.read32 = read32;
