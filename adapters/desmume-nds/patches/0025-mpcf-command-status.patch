@@ -1,0 +1,22 @@
+diff --git a/desmume/src/addons/slot2_mpcf.cpp b/desmume/src/addons/slot2_mpcf.cpp
+--- a/desmume/src/addons/slot2_mpcf.cpp
++++ b/desmume/src/addons/slot2_mpcf.cpp
+@@ -146,6 +146,8 @@ static unsigned int cflash_read(unsigned int address)
+ 
+ 	switch (address)
+ 	{
++		// ATA command writes and status reads share the same register.
++		case CF_REG_CMD:
+ 		case CF_REG_STS:
+ 			ret_value = cf_reg_sts;
+ 		break;
+@@ -167,9 +169,6 @@ static unsigned int cflash_read(unsigned int address)
+ 			}
+ 		break;
+ 
+-	case CF_REG_CMD:
+-	break;
+-
+ 	case CF_REG_LBA1:
+ 		ret_value = cf_reg_lba1;
+ 	break;

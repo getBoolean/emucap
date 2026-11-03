@@ -419,7 +419,7 @@ impl WsTransport for TungsteniteWs {
                                 || value.get("state").and_then(Value::as_str) != Some("frozen")
                                 || value.get("unit").and_then(Value::as_str) != Some("frames")
                                 || value.get("count").and_then(Value::as_u64) != Some(count)
-                                || !completed.is_some_and(|n| n <= count)
+                                || completed.is_none_or(|n| n > count)
                                 || !matches!(status, Some("completed" | "interrupted"))
                                 || (status == Some("completed") && completed != Some(count))
                             {

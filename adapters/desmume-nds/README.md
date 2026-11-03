@@ -208,6 +208,13 @@ a frame step that spends the host budget returns `reason: "host_deadline"`.
 
 ## Operational notes
 
+Patch 0026 aligns LDM exception-return addresses using SPSR.T. Interrupt returns
+to an even Thumb address ending in binary `10` must preserve bit 1; using the
+loaded address's bit 0 replays the preceding instruction and can corrupt a guest
+stack. The build runs 128 production instruction-handler checks covering both
+CPUs, all eight LDM return forms, both saved instruction sets, and all address
+low-bit combinations.
+
 - **Halt-on-start**: the stubs start stopped. Drive with `resume` / `step` after the bridge attaches.
 - **Ignores SIGTERM**: desmume-cli doesn't die on `kill` (SIGTERM) — the launcher escalates to SIGKILL.
 - **Interpreter**: the gdb-stub build disables the JIT (same as Flycast).
