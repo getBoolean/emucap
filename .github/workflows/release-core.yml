@@ -1,4 +1,4 @@
-name: Release Pico storage cores
+name: Release Pico emulator packages
 
 on:
   workflow_dispatch:
@@ -41,8 +41,14 @@ jobs:
       revision: ${{ needs.resolve.outputs.revision }}
       version: ${{ inputs.tag }}
 
+  native:
+    needs: resolve
+    uses: ./.github/workflows/pico-native.yml
+    with:
+      revision: ${{ needs.resolve.outputs.revision }}
+
   publish:
-    needs: [resolve, build]
+    needs: [resolve, build, native]
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -56,7 +62,12 @@ jobs:
           pattern: core-*
           merge-multiple: true
           path: packages
-      - name: Verify and publish fork core packages
+      - uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: pico-native-package-*
+          merge-multiple: true
+          path: packages
+      - name: Verify and publish fork emulator packages
         working-directory: packages
         env:
           GH_TOKEN: ${{ github.token }}
@@ -66,5 +77,5 @@ jobs:
           sha256sum --check *.sha256
           cat *.sha256 > SHA256SUMS
           gh release create "$RELEASE_TAG" --verify-tag --prerelease \
-            --title "Pico storage core $RELEASE_TAG" --notes-file ../FORK.md \
+            --title "Pico emulator packages $RELEASE_TAG" --notes-file ../FORK.md \
             ./*.zip ./*.tar.gz ./*.json ./*.sha256 ./SHA256SUMS
