@@ -12,8 +12,8 @@ The requested Eglantine source is **Djihads80/Eglantine**, branch `nx2`, revisio
 | --- | --- | --- | --- |
 | Azahar | `9c38437daad90a2f05f55a047d04d4073a476456` | Supervised libretro ABI, combined software capture, persistent digital/analog/touch, native profile/root attestation, running progress waits; no pause | Windows x86-64 software: lawful CTR witness passed within scope below |
 | Eden | `5df599128d6828fa0e42968909da848c255d22b1` | Shared SDL producer, input/touch, GPU capture, render-progress wait, managed profile/root binding | Windows x86-64 hidden Vulkan: lawful Switch 1 witness passed |
-| Eden-NX2 | `eden-nx2`, `50fa86bbbc403ad565eb44fcc281f16f77c69e15` | Same protocol, source-specific integration; concrete Switch 2 loader/system paths | Windows x86-64 hidden Vulkan: Switch 1 witness passed; Switch 2 unqualified |
-| Eglantine | Djihads80 `nx2`, `c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4` | Same protocol and explicit source pin; experimental Switch 2 target | Windows x86-64 hidden Vulkan: Switch 1 witness passed; Switch 2 unqualified |
+| Eden-NX2 | `eden-nx2`, `50fa86bbbc403ad565eb44fcc281f16f77c69e15` | Same protocol, source-specific integration; concrete Switch 2 loader/system paths | Windows x86-64 hidden Vulkan: Switch 1 and configured Switch 2 homebrew witnesses passed |
+| Eglantine | Djihads80 `nx2`, `c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4` | Same protocol and explicit source pin; experimental Switch 2 target | Windows x86-64 hidden Vulkan: Switch 1 and configured Switch 2 homebrew witnesses passed |
 
 Upstream Eglantine calls itself very experimental and publishes game compatibility
 claims in its [README](https://github.com/Djihads80/Eglantine). Those are upstream
@@ -166,17 +166,27 @@ not receive passing live credit. Switch 1 witnesses cannot qualify Switch 2.
 
 ## Live blockers and recovery
 
+The lawful Ounce ExeFS fixture now passes on both Switch 2 forks. See
+[the current Ozone/NPDM evidence](switch2-ozone-research.md) for the open-tool
+extension, independent beetool parse, exact hashes and live results. The passing
+configuration uses a fixed 64 MiB guest heap and preselected native 12 GiB layout.
+NX2's default layout transition and automatic heap paths remain failed evidence.
+This qualifies the tested emucap primitives, not general Switch 2 game compatibility.
+Later managed repeats exited before readiness; a standalone repeat recorded a
+Vulkan initialization failure and subsequent native access violation. Stable
+repeated launch on this driver remains unqualified; the evidence link above
+retains the passing and failed attempts separately.
+
 1. Build and qualify additional hosts/renderers independently using the documented
    dependencies. Keep each executable, compiler runtimes and matched sidecar together.
    The completed Windows builds do not establish Linux/macOS build or live results.
 2. Diagnose the failed OpenGL and partial-start native teardown cells before
    claiming support there. Retain failing logs and exit status alongside any retry.
    Additional input axes/buttons require their own guest-visible witnesses.
-3. Complete and validate Switch 2 homebrew target metadata. The user's Ozone lead
-   supplied a buildable open `libnx-ounce` library, and a target-library ELF/NSO
-   probe compiled. The available NPDM packer still emits the NX layout, leaving
-   the bootable fixture blocked. See [the pinned Ozone investigation](switch2-ozone-research.md).
-   A libnx Switch 1 fixture, build-only probe or upstream claim cannot qualify this cell.
+3. Qualify broader Switch 2 behavior independently. The initial NPDM packaging
+   blocker is resolved for the source-built witness; broader services, GPU
+   features, default memory transitions and automatic heap accounting are not
+   qualified by that witness. A Switch 1 NRO still cannot qualify Switch 2.
 4. Qualify cancellation, capture timeout, disconnect and process-loss cleanup on
    actual emulators, and test direct/broker paths, visible/hidden GPU and software
    display-free modes independently. Record unsupported drivers/configurations.

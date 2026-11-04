@@ -2,6 +2,9 @@
 
 Scope: local checkout `B:/dev/GitHub/emucap`, branch
 `feat/azahar-libretro-bridge`, compared with `21812b8e3fd37c9cab602ce5a4e607988a4c0cfa`.
+This report records the initial completed checkpoint `cfc8b74`. The subsequent
+[Ounce fixture and live verification](switch2-ozone-research.md) supersedes its
+Switch 2 packaging blocker and adds the follow-up paths listed there.
 No push, PR, worktree, commercial asset or `3ds_flutter` edit is part of this work.
 The final package's adjacent JSON binds its exact clean source revision; live
 witnesses below bind the executable/core/fixture bytes they actually used.
@@ -123,11 +126,10 @@ a later binary. Failed harness attempts remain separate failed results.
 
 ## Unqualified cells and blockers
 
-- **Switch 2:** the user's Ozone reference supplied a buildable open libnx-ounce
-  library; a target-library ELF/NSO probe compiled with devkitA64. The available
-  NPDM tool still emits NX metadata, leaving a validated bootable fixture blocked.
-  [Pinned source/build/format evidence](switch2-ozone-research.md) records that
-  narrower blocker. A Switch 1 NRO or compiled probe cannot qualify Switch 2.
+- **Switch 2 at the initial checkpoint:** NPDM packaging was blocked. The later
+  [Ounce fixture verification](switch2-ozone-research.md) resolves that gate and
+  records passing configured homebrew runs in both forks. Broader Switch 2
+  compatibility and the documented failing native memory paths remain unqualified.
 - **OpenGL:** hidden Eden `003` and NX2 `002` produced all-black PNGs and failed the
   guest-magic assertion. Eden visible `004` failed readiness. Cause unresolved;
   Eglantine OpenGL was not qualified. Do not credit these as passing captures.
@@ -173,7 +175,7 @@ All results are local, not hosted CI or published release evidence.
 
 ## Exact changed paths
 
-The following 100 paths differ from the base. Paths are relative to
+At checkpoint `cfc8b74`, the following 100 paths differed from the base. Paths are relative to
 `B:/dev/GitHub/emucap`.
 
 ```text

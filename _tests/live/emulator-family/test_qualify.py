@@ -13,6 +13,24 @@ spec.loader.exec_module(qualify)
 
 
 class PixelAdmissionTests(unittest.TestCase):
+    def test_cleanup_removes_read_only_staged_members(self):
+        with tempfile.TemporaryDirectory() as directory:
+            home = Path(directory) / 'owned-runtime'
+            home.mkdir()
+            member = home / 'main'
+            member.write_bytes(b'owned staged content')
+            member.chmod(0o400)
+            qualify.remove_runtime_home(home)
+            self.assertFalse(home.exists())
+
+    def test_composite_media_requires_explicit_approval(self):
+        plan = {'indirect_media': {'state': 'review_required'}, 'next_action': {
+            'then_call': {'arguments': {'indirect_media_approval': {'digest': 'fixture'}}}}}
+        with self.assertRaisesRegex(RuntimeError, 'explicit reviewed-media approval'):
+            qualify.composite_approval(plan, False)
+        self.assertEqual(qualify.composite_approval(plan, True), {'digest': 'fixture'})
+        self.assertIsNone(qualify.composite_approval({}, False))
+
     def test_touch_qualification_requires_the_expected_native_contract(self):
         valid = {'touch_capability': {'ports': [0], 'width': 320, 'height': 240,
                  'contacts': 1, 'coordinate_space': 'touchscreen'},

@@ -11,6 +11,7 @@ import os
 from pathlib import Path
 import shutil
 import socket
+import stat
 import sys
 import tempfile
 import time
@@ -24,6 +25,22 @@ def free_port():
     with socket.socket() as listener:
         listener.bind(('127.0.0.1', 0))
         return listener.getsockname()[1]
+
+
+def remove_runtime_home(home):
+    root = home.resolve()
+
+    def remove_readonly(function, path, error):
+        member = Path(path)
+        attributes = member.lstat()
+        if (os.name != 'nt' or not isinstance(error, PermissionError) or member.is_symlink()
+                or not member.resolve().is_relative_to(root)
+                or not attributes.st_file_attributes & stat.FILE_ATTRIBUTE_READONLY):
+            raise error
+        member.chmod(stat.S_IWRITE)
+        function(path)
+
+    shutil.rmtree(home, onexc=remove_readonly)
 
 
 def collect_runtime_evidence(home, output):
@@ -92,6 +109,14 @@ def require_touch(status, system):
     return bounds
 
 
+def composite_approval(plan, approved):
+    if plan.get('indirect_media', {}).get('state') != 'review_required':
+        return None
+    if not approved:
+        raise RuntimeError('composite fixture requires explicit reviewed-media approval; use --approve-indirect-media after reviewing the source-built graph')
+    return plan['next_action']['then_call']['arguments']['indirect_media_approval']
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     for name in ('mcp', 'binary', 'content', 'output'):
@@ -102,6 +127,8 @@ def main():
     parser.add_argument('--system', required=True, choices=['3ds', 'switch', 'switch2'])
     parser.add_argument('--renderer', choices=['software', 'opengl', 'vulkan'])
     parser.add_argument('--display', action='store_true')
+    parser.add_argument('--approve-indirect-media', action='store_true',
+                        help='Explicitly approve the reviewed source-built composite fixture graph returned by launch_plan')
     args = parser.parse_args()
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
@@ -111,8 +138,11 @@ def main():
     launch_id = None
     runtime_home = None
     try:
-        for key in ('mcp', 'binary', 'content'):
-            path = getattr(args, key).resolve()
+        for key in ('mcp', 'binary', 'content', 'config'):
+            value = getattr(args, key)
+            if value is None:
+                continue
+            path = value.resolve()
             if not path.is_file():
                 raise RuntimeError(f'missing {key}: {path}')
             evidence[key + '_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
@@ -143,8 +173,12 @@ def main():
                      'emulator': options, 'display': args.display}
         plan_selection = {key: value for key, value in selection.items() if key != 'display'}
         plan = call('launch_plan', plan_selection)
-        if plan.get('indirect_media', {}).get('state') == 'review_required':
-            raise RuntimeError('composite fixture requires explicit reviewed-media approval; use documented launch_plan flow')
+        approval = composite_approval(plan, args.approve_indirect_media)
+        if approval is not None:
+            selection['indirect_media_approval'] = approval
+            approved_plan = call('launch_plan', dict(plan_selection, indirect_media_approval=approval))
+            if approved_plan.get('indirect_media', {}).get('state') != 'approved':
+                raise RuntimeError('reviewed composite fixture did not retain its approved identity')
         launched = call('launch', selection)
         if not launched.get('launched'):
             raise RuntimeError(f'managed launch rejected: {launched}')
@@ -328,7 +362,7 @@ def main():
                     evidence['private_runtime_home'] = str(runtime_home)
                 elif (runtime_home.resolve().is_relative_to(Path(tempfile.gettempdir()).resolve())
                       and runtime_home.name.startswith('emucap-live-home-') and not runtime_home.is_symlink()):
-                    shutil.rmtree(runtime_home)
+                    remove_runtime_home(runtime_home)
             except Exception as error:
                 evidence.update(status='failed', evidence_error=str(error))
         (out / 'result.json').write_text(json.dumps(evidence, indent=2) + '\n', encoding='utf-8')

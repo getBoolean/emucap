@@ -1,7 +1,12 @@
 /* SPDX-License-Identifier: CC0-1.0
- * Original libnx Switch 1 witness. This is not a Switch 2 ABI fixture. */
+ * Original Horizon witness; target-2 builds require pinned libounce and Ounce metadata. */
 #include <switch.h>
 #include <string.h>
+
+#ifdef __SWITCH2__
+/* This witness needs only its framebuffer and runtime, not the entire available pool. */
+size_t __nx_heap_size = 64 * 1024 * 1024;
+#endif
 
 static void row(u32 *fb, unsigned stride, unsigned y, u32 value) {
     for (unsigned bit = 0; bit < 32; ++bit)
@@ -38,7 +43,11 @@ int main(void) {
         row(pixels, stride, 88, (u16)stick.x | ((u32)(u16)stick.y << 16));
         row(pixels, stride, 112, touch.count ? touch.touches[0].x |
             ((u32)touch.touches[0].y << 16) : 0xffffffff);
-        row(pixels, stride, 136, 1); /* Actual target: Switch 1/libnx. */
+#ifdef __SWITCH2__
+        row(pixels, stride, 136, 2);
+#else
+        row(pixels, stride, 136, 1);
+#endif
         framebufferEnd(&framebuffer);
     }
     framebufferClose(&framebuffer);
