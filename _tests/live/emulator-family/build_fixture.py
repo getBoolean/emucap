@@ -35,12 +35,24 @@ def main():
     subprocess.run(command, check=True, timeout=120, env=environment)
     fixture = out / ('witness.3dsx' if ctr else 'witness.nro')
     pack = root / 'tools/bin' / (('3dsxtool' if ctr else 'elf2nro') + suffix)
-    subprocess.run([str(pack), str(elf), str(fixture)], check=True, timeout=30)
+    packaging = [str(pack), str(elf), str(fixture)]
+    metadata = None
+    if not ctr:
+        # Ryujinx-family loaders require standard application metadata even for NRO homebrew.
+        metadata = out / 'witness.nacp'
+        nacptool = root / 'tools/bin' / ('nacptool' + suffix)
+        subprocess.run([str(nacptool), '--create', 'emucap-witness', 'emucap', '1.0',
+                        str(metadata)], check=True, timeout=30)
+        packaging.append('--nacp=' + str(metadata))
+    subprocess.run(packaging, check=True, timeout=30)
     manifest = {'system': args.system, 'content': fixture.name, 'license': 'CC0-1.0',
                 'source': source.name, 'source_sha256': hashlib.sha256(source.read_bytes()).hexdigest(),
                 'fixture_sha256': hashlib.sha256(fixture.read_bytes()).hexdigest(),
                 'compiler': subprocess.check_output([str(compiler), '--version'], text=True).splitlines()[0],
                 'command': command, 'qualification': 'fixture-build-only; no emulator execution'}
+    manifest['packaging_command'] = packaging
+    if metadata:
+        manifest['nacp_sha256'] = hashlib.sha256(metadata.read_bytes()).hexdigest()
     (out / 'build.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     (out / 'fixture.json').write_text(json.dumps(manifest, indent=2) + '\n', encoding='utf-8')
     print(fixture)

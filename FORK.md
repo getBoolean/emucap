@@ -1,6 +1,6 @@
 # Pico emulator packages
 
-The development branch also adds experimental Azahar and shared Eden-family
+The development branch also adds experimental Azahar, shared Eden-family and Ryubing
 integration. These changes are local source work, separate from the published
 Pico packages described below. See [qualification and build evidence](docs/emulator-family-qualification.md).
 Eglantine is pinned to Djihads80/Eglantine `nx2`; the earlier Selevet target is

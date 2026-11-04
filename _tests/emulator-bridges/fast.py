@@ -11,8 +11,23 @@ import platform
 import subprocess
 import sys
 import tempfile
+import urllib.request
 
 ROOT = Path(__file__).resolve().parents[2]
+
+
+def ryujinx_abi_command(cxx, library, include):
+    adapter = ROOT / 'adapters/ryujinx-family'
+    command = [cxx, '-std=c++20', '-O1', '-Wall', '-Wextra', '-Werror', '-pthread',
+               '-dynamiclib' if sys.platform == 'darwin' else '-shared']
+    command += ['-static'] if os.name == 'nt' else ['-fPIC']
+    command += ['-I' + str(ROOT / 'adapters/_common'), '-I' + str(include),
+                str(adapter / 'native/EmucapNative.cpp'),
+                str(ROOT / 'adapters/eden-family/native/EmucapBridge.cpp'),
+                str(ROOT / 'adapters/_common/emucap_native_failure.cpp'), '-o', str(library)]
+    if os.name == 'nt':
+        command.append('-lws2_32')
+    return command
 
 
 def main():
@@ -59,6 +74,8 @@ def main():
                                '-s', 'adapters/azahar', '-p', 'test_*.py'])
         check('eden-build-profile', [sys.executable, '-m', 'unittest', 'discover',
                                     '-s', 'adapters/eden-family/tests', '-p', 'test_*.py'])
+        check('ryujinx-build-profile', [sys.executable, '-m', 'unittest', 'discover',
+                                       '-s', 'adapters/ryujinx-family/tests', '-p', 'test_*.py'])
         check('guest-pixel-admission', [sys.executable, '-m', 'unittest', 'discover',
                                       '-s', '_tests/live/emulator-family', '-p', 'test_*.py'])
         check('core-package-boundaries', [sys.executable, '_tests/release/package_core_tests.py'])
@@ -66,6 +83,26 @@ def main():
                                            '-s', '_tests/emulator-bridges', '-p', 'test_*.py'])
         check('eden-native-endpoint', [sys.executable, 'adapters/eden-family/tests/run.py',
                                        '--cxx', args.cxx])
+        spec = importlib.util.spec_from_file_location(
+            'eden_native_test', ROOT / 'adapters/eden-family/tests/run.py')
+        eden = importlib.util.module_from_spec(spec)
+        spec.loader.exec_module(eden)
+        with tempfile.TemporaryDirectory(prefix='emucap-ryujinx-ci-') as temporary:
+            root = Path(temporary)
+            include = root / 'include'
+            header = include / 'nlohmann/json.hpp'
+            header.parent.mkdir(parents=True)
+            data = urllib.request.urlopen(eden.JSON_URL, timeout=30).read()
+            if hashlib.sha256(data).hexdigest() != eden.JSON_SHA256:
+                raise RuntimeError('pinned JSON header digest mismatch')
+            header.write_bytes(data)
+            suffix = '.dll' if os.name == 'nt' else '.dylib' if sys.platform == 'darwin' else '.so'
+            library = root / ('emucap-native' + suffix)
+            check('ryujinx-native-build', ryujinx_abi_command(args.cxx, library, include))
+            check('ryujinx-native-endpoint', [sys.executable,
+                  'adapters/ryujinx-family/tests/native_abi_test.py', str(library)])
+            result['ryujinx_fixture'] = {'sha256': hashlib.sha256(library.read_bytes()).hexdigest(),
+                                        'loaded_and_exercised': True}
         result['status'] = 'passed'
     except Exception as error:
         result['error'] = str(error)

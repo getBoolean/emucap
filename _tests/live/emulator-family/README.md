@@ -38,6 +38,7 @@ additional live witnesses; synthetic endpoint tests do not replace them.
 Switch witnesses require the native HID rectangle `x=15..1264, y=15..704` within
 the logical 1280x720 touchscreen. They test those supported corners and center,
 then reject an unsupported (0,0) request and verify the held touch did not change.
+Ryubing uses the complete 1280x720 rectangle (0..1279, 0..719).
 Azahar retains the complete 320x240 touch area. These bounds are protocol data,
 not a coordinate tolerance added to hide native clamping.
 
@@ -45,6 +46,22 @@ Hidden GPU tests still require a working display/driver. On Linux, run under
 `xvfb-run -a` with an installed Mesa Vulkan/OpenGL driver. Record the exact driver,
 ICD, renderer and display mode separately. Azahar software intends to be display-free;
 that requires its own actual core/guest proof.
+
+Ryubing qualification uses the standard Switch 1 `build_fixture.py` NRO, which
+now packages a standard NACP asset with devkitPro's `nacptool`/`elf2nro`.
+Select `--fork ryubing --system switch --binary .../Ryujinx.exe` and a JSON config
+such as `{"preferred_gpu_vendor":"Intel"}` when selecting that GPU on Windows.
+The complete patched frontend output and .NET 10 runtime must be available.
+Pause readback binds to Horizon state; paused images are cached, and a subsequent
+resume must advance the guest witness. Ryubing is not a Switch 2 target.
+
+On Windows the harness also checks actual owned-window visibility against
+`--display`. Use `--display --native-close` to qualify native SDL close with a
+bounded zero-exit check, and add `--close-paused` for paused teardown. These
+probes run before the supervisor's stop cleanup. They are distinct from the
+usual managed stop, which may terminate the process. Cached paused PNG equality
+does not prove guest CPU halt; the harness records that limit and separately
+checks native presentation stability and post-resume guest progress.
 
 ## Switch 2 boundary
 
@@ -104,3 +121,11 @@ No commercial assets or guest-security workaround may substitute for it.
 The initial build-only probe and its missing-NPDM result remain historical
 evidence. The dedicated `build_ounce_fixture.py` and the live results above
 supersede that blocker; `build_fixture.py` retains CTR/Switch 1 behavior.
+
+The opt-in live CI lane accepts the Ounce builder's `source_license`/`members`
+manifest and verifies both ExeFS members plus source, descriptor and config
+hashes. Select `approve_indirect_media: true` only after reviewing that lawful
+fixture graph and its runner-appropriate config; otherwise Switch 2 admission
+stays blocked. The local `live.py` equivalent is `--approve-indirect-media`.
+For local Linux builds and testing, use the named services and bind folders in
+the [Compose guide](../../emulator-bridges/docker/README.md).

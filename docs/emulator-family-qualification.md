@@ -1,6 +1,6 @@
 # Experimental emulator-family qualification
 
-This is the evidence boundary for the Azahar and Eden-family development work.
+This is the evidence boundary for the Azahar, Eden-family and Ryubing development work.
 Source preparation, synthetic protocol tests, native builds and live guest
 qualification are separate results. No Switch 2 game-compatibility claim is made.
 The requested Eglantine source is **Djihads80/Eglantine**, branch `nx2`, revision
@@ -10,9 +10,14 @@ The subsequent [control recovery](emulator-control-recovery.md) records updated
 native patch/executable hashes, clean failed-start regression results on all
 three Eden forks, three repeated Switch 2 control runs on each maintained fork,
 and passing automatic 12 GiB transitions. These current runs explicitly select
-Intel Vulkan on this host; AMD surface-capability queries currently fail even
-outside the emulator. Earlier evidence below remains historical rather than
+Intel Vulkan on this host; at that time AMD surface-capability queries failed even
+outside the emulator. A later standalone WSI probe succeeded on both adapters;
+AMD guest behavior still needs its own qualification. Earlier evidence below remains historical rather than
 proof of the updated binaries.
+
+The [Ryubing integration record](ryubing-qualification.md) covers its separate
+Ryujinx-family Switch 1 source build, startup corrections and actual homebrew
+control. It does not extend Ryubing to Switch 2.
 
 ## Source and operation matrix
 
@@ -22,6 +27,7 @@ proof of the updated binaries.
 | Eden | `5df599128d6828fa0e42968909da848c255d22b1` | Shared SDL producer, input/touch, GPU capture, render-progress wait, managed profile/root binding | Windows x86-64 hidden Vulkan: lawful Switch 1 witness passed |
 | Eden-NX2 | `eden-nx2`, `50fa86bbbc403ad565eb44fcc281f16f77c69e15` | Same protocol, source-specific integration; concrete Switch 2 loader/system paths | Windows x86-64 hidden Vulkan: Switch 1 and configured Switch 2 homebrew witnesses passed |
 | Eglantine | Djihads80 `nx2`, `c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4` | Same protocol and explicit source pin; experimental Switch 2 target | Windows x86-64 hidden Vulkan: Switch 1 and configured Switch 2 homebrew witnesses passed |
+| Ryubing | `a61a42681119bf15fe8f3297677ae48bda83e70f` | Separate Ryujinx-family producer; shared transport, controller/touch, GPU capture, observed progress, pause/resume | Windows Vulkan/OpenGL and Linux Compose Mesa Vulkan with explicit software-page-table config: Switch 1 witness passed; see exact builds in its record |
 
 Upstream Eglantine calls itself very experimental and publishes game compatibility
 claims in its [README](https://github.com/Djihads80/Eglantine). Those are upstream

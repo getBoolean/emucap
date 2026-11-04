@@ -95,7 +95,7 @@ def decode(path, system):
         return result
 
 
-def require_touch(status, system):
+def require_touch(status, system, fork=None):
     bounds = status.get('touch_capability')
     width, height = (320, 240) if system == '3ds' else (1280, 720)
     if (not isinstance(bounds, dict) or bounds.get('ports') != [0]
@@ -104,6 +104,10 @@ def require_touch(status, system):
             or not {'hold_touch', 'release_touch'} <= set(status.get('methods', []))):
         raise RuntimeError('expected maintained-family touchscreen capability is absent or incompatible')
     expected = None if system == '3ds' else {'x_min': 15, 'x_max': 1264, 'y_min': 15, 'y_max': 704}
+    if fork == 'ryubing':
+        if system != 'switch':
+            raise RuntimeError('Ryubing implements Switch 1 only')
+        expected = {'x_min': 0, 'x_max': 1279, 'y_min': 0, 'y_max': 719}
     if bounds.get('bounds') != expected:
         raise RuntimeError('expected native touchscreen coordinate bounds are absent or incompatible')
     return bounds
@@ -123,13 +127,19 @@ def main():
         parser.add_argument('--' + name, required=True, type=Path)
     for name in ('core', 'python', 'profile', 'config'):
         parser.add_argument('--' + name, type=Path)
-    parser.add_argument('--fork', required=True, choices=['azahar', 'eden', 'eden-nx2', 'eglantine'])
+    parser.add_argument('--fork', required=True, choices=['azahar', 'eden', 'eden-nx2', 'eglantine', 'ryubing'])
     parser.add_argument('--system', required=True, choices=['3ds', 'switch', 'switch2'])
     parser.add_argument('--renderer', choices=['software', 'opengl', 'vulkan'])
     parser.add_argument('--display', action='store_true')
+    parser.add_argument('--native-close', action='store_true',
+                        help='Windows: verify native window-close teardown before supervisor stop')
+    parser.add_argument('--close-paused', action='store_true',
+                        help='Pause before --native-close to qualify that teardown state too')
     parser.add_argument('--approve-indirect-media', action='store_true',
                         help='Explicitly approve the reviewed source-built composite fixture graph returned by launch_plan')
     args = parser.parse_args()
+    if (args.native_close and os.name != 'nt') or (args.close_paused and not args.native_close):
+        parser.error('native-close requires Windows; close-paused requires native-close')
     out = args.output.resolve()
     out.mkdir(parents=True, exist_ok=False)
     evidence = {'status': 'blocked', 'fork': args.fork, 'system': args.system,
@@ -146,6 +156,17 @@ def main():
             if not path.is_file():
                 raise RuntimeError(f'missing {key}: {path}')
             evidence[key + '_sha256'] = hashlib.sha256(path.read_bytes()).hexdigest()
+        if args.fork == 'ryubing':
+            # The apphost is stable across rebuilds; hash the managed program and bridge too.
+            payload = args.binary.resolve().parent
+            names = ('Ryujinx.dll', 'Ryujinx.HLE.dll', 'Ryujinx.Common.dll', 'Ryujinx.Input.dll',
+                     'Ryujinx.SDL3.Common.dll',
+                     'Ryujinx.Graphics.GAL.dll', 'Ryujinx.Graphics.Gpu.dll',
+                     'Ryujinx.Graphics.Vulkan.dll', 'Ryujinx.Graphics.OpenGL.dll',
+                     'Ryujinx.runtimeconfig.json',
+                     'emucap-native.dll' if os.name == 'nt' else 'libemucap-native.so')
+            evidence['frontend_payload_sha256'] = {
+                name: hashlib.sha256((payload / name).read_bytes()).hexdigest() for name in names}
         # Import before launch so missing validation dependencies cannot strand a generation.
         from PIL import Image
         options = {'fork': args.fork, 'binary': str(args.binary.resolve())}
@@ -188,7 +209,11 @@ def main():
         launch_id = status['runtime_instance']['launch_id']
         if status.get('contracts', {}).get('state') != 'validated':
             raise RuntimeError('runtime capability contracts are not validated')
-        touch_bounds = require_touch(status, args.system)
+        touch_bounds = require_touch(status, args.system, args.fork)
+        if args.fork == 'ryubing' and os.name == 'nt':
+            from native_close import verify_visibility
+            evidence['window_visibility'] = verify_visibility(
+                launched['runtime_instance']['emulator_pid'], args.display)
         mismatched_profile = json.loads(json.dumps(status['host_build']))
         mismatched_profile['patch_sha256'] = 'ff' * 32
         bad_profile_path = out / 'mismatched-build-profile.json'
@@ -327,6 +352,28 @@ def main():
         unqualified = ['exact stepping', 'capture timeout recovery', 'disconnect input cleanup']
         if 'pause' in status.get('methods', []):
             call('pause')
+            paused = call('status')
+            if paused.get('state') != 'paused' or paused.get('paused') is not True:
+                raise RuntimeError('native pause readback did not confirm paused state')
+            if args.fork == 'ryubing':
+                # Cached PNG equality cannot show that the guest halted.
+                unqualified.append('paused guest halt: cached capture cannot sample guest state')
+                start_count = paused.get('native_render_present')
+                time.sleep(1)
+                after_pause = call('status')
+                end_count = after_pause.get('native_render_present')
+                if (not isinstance(start_count, int) or not isinstance(end_count, int)
+                        or not 0 <= end_count - start_count <= 3):
+                    raise RuntimeError('presentation continued during native pause beyond in-flight allowance')
+                evidence['paused_present_observation'] = {'start': start_count, 'end': end_count,
+                    'seconds': 1, 'max_in_flight': 3}
+                try:
+                    debug('wait_for_running_frames', {'frames': 1, 'timeout_ms': 1000})
+                except RuntimeError as error:
+                    if 'bad_state' not in str(error):
+                        raise
+                else:
+                    raise RuntimeError('running progress wait was admitted while paused')
             path = out / 'frozen.png'
             call('screenshot', {'save_path': str(path)})
             frozen = decode(path, args.system)
@@ -334,9 +381,24 @@ def main():
             path2 = out / 'still-frozen.png'
             call('screenshot', {'save_path': str(path2)})
             if decode(path2, args.system)['frame'] != frozen['frame']:
-                raise RuntimeError('guest counter advanced while paused')
+                raise RuntimeError('paused cached image changed unexpectedly')
+            evidence['paused_capture'] = 'cached last-completed image; no fresh paused guest sampling'
+            call('resume')
+            resumed = snapshot('resumed')
+            resumed_again = snapshot('resumed-advancing')
+            if resumed_again['frame'] <= resumed['frame']:
+                raise RuntimeError('guest counter did not advance after resume')
+            evidence['guest_resumed'] = resumed_again
         else:
             unqualified.append('paused stability: native pause capability unavailable')
+        if args.native_close:
+            if args.close_paused:
+                call('pause')
+                if call('status').get('state') != 'paused':
+                    raise RuntimeError('native close probe did not enter paused state')
+            from native_close import close_owned_window
+            evidence['native_close'] = close_owned_window(launched['runtime_instance']['emulator_pid'])
+            evidence['native_close']['initial_state'] = 'paused' if args.close_paused else 'running'
         evidence.update(status='passed', guest_initial=first, guest_held=held,
                         guest_released=released, guest_frozen=frozen,
                         unqualified=unqualified)

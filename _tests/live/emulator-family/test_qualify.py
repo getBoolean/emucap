@@ -75,6 +75,17 @@ class PixelAdmissionTests(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, 'coordinate bounds'):
             qualify.require_touch(missing, 'switch')
 
+    def test_ryubing_bounds_are_full_screen_and_do_not_relax_eden_bounds(self):
+        status = {'touch_capability': {'ports': [0], 'width': 1280, 'height': 720,
+                  'contacts': 1, 'coordinate_space': 'touchscreen',
+                  'bounds': {'x_min': 0, 'x_max': 1279, 'y_min': 0, 'y_max': 719}},
+                  'methods': ['hold_touch', 'release_touch']}
+        self.assertEqual(qualify.require_touch(status, 'switch', 'ryubing')['bounds']['x_max'], 1279)
+        with self.assertRaisesRegex(RuntimeError, 'coordinate bounds'):
+            qualify.require_touch(status, 'switch', 'eden')
+        with self.assertRaisesRegex(RuntimeError, 'Switch 1 only'):
+            qualify.require_touch(status, 'switch2', 'ryubing')
+
     def image(self, path, identity=1, magic=0x454d5543):
         image = Image.new('RGB', (1280, 720), (48, 48, 48))
         draw = ImageDraw.Draw(image)

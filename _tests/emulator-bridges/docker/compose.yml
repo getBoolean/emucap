@@ -1,0 +1,69 @@
+name: emucap-bridge-qualification
+services:
+  fast:
+    image: python:3.12-bookworm
+    container_name: emucap-bridge-fast-linux
+    init: true
+    working_dir: /workspace
+    entrypoint: []
+    command: [sleep, infinity]
+    environment:
+      TMPDIR: /state/tmp
+      PIP_CACHE_DIR: /state/pip
+    volumes:
+      - type: bind
+        source: ${EMUCAP_REPO_ROOT:?Set the absolute checkout path}
+        target: /workspace
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${EMUCAP_DOCKER_EVIDENCE:?Set the absolute evidence folder}/fast
+        target: /evidence
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${EMUCAP_DOCKER_WORK:?Set the absolute cache/work folder}/fast
+        target: /state
+        bind:
+          create_host_path: false
+  ryubing:
+    build:
+      context: .
+      dockerfile: Dockerfile.native
+    container_name: emucap-bridge-ryubing-linux
+    init: true
+    working_dir: /workspace
+    entrypoint: []
+    command: [sleep, infinity]
+    cpus: 8
+    mem_limit: 8g
+    volumes:
+      - type: bind
+        source: ${EMUCAP_REPO_ROOT:?Set the absolute checkout path}
+        target: /workspace
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${EMUCAP_RYUBING_SOURCE:?Set the pinned upstream Git checkout path}
+        target: /upstream
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${EMUCAP_SWITCH_FIXTURE:?Set the source-built Switch witness folder}
+        target: /fixture
+        read_only: true
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${EMUCAP_DOCKER_EVIDENCE:?Set the absolute evidence folder}/native
+        target: /evidence
+        bind:
+          create_host_path: false
+      - type: bind
+        source: ${EMUCAP_DOCKER_WORK:?Set the absolute cache/work folder}/native
+        target: /work
+        bind:
+          create_host_path: false

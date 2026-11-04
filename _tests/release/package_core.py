@@ -193,7 +193,11 @@ def main():
             "The stdlib-only private worker is `adapters/azahar/bridge.py`; Python and the native "
             "core are not bundled. Set explicit Python/core paths in the managed launch options. "
             "Package validation checks host/worker startup and missing-core rejection; it does not "
-            "qualify live emulator or guest behavior.\n")
+            "qualify live emulator or guest behavior.\n\n"
+            "Ryubing is selected with emulator.fork=ryubing and an explicit patched binary. "
+            "Build adapters/ryujinx-family separately and retain its complete output folder, "
+            "including the hash-bound native bridge and managed dependencies. Install .NET 10 "
+            "runtime separately. Ryubing is Switch 1 only; its emulator/runtime are not bundled.\n")
         if suffix:
             package = Path(shutil.make_archive(str(output / name), "zip", temporary, name))
         else:
