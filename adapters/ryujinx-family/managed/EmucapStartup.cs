@@ -4,6 +4,7 @@ using System.IO;
 using System.Linq;
 using System.Security.Cryptography;
 using System.Text.Json;
+using Ryujinx.Common.Configuration;
 
 namespace Ryujinx.Headless;
 
@@ -48,6 +49,17 @@ internal static class EmucapStartup
         if (document.RootElement.ValueKind != JsonValueKind.Object) throw new InvalidOperationException("Managed config must be an object");
         foreach (JsonProperty field in document.RootElement.EnumerateObject())
         {
+            if (field.Name == "memory_manager_mode" && field.Value.ValueKind == JsonValueKind.String)
+            {
+                options.MemoryManagerMode = field.Value.GetString() switch
+                {
+                    "SoftwarePageTable" => MemoryManagerMode.SoftwarePageTable,
+                    "HostMapped" => MemoryManagerMode.HostMapped,
+                    "HostMappedUnsafe" => MemoryManagerMode.HostMappedUnsafe,
+                    _ => throw new InvalidOperationException("Unsupported memory manager mode"),
+                };
+                continue;
+            }
             if (field.Name != "preferred_gpu_vendor" || field.Value.ValueKind != JsonValueKind.String)
                 throw new InvalidOperationException("Unsupported managed config field: " + field.Name);
             string vendor = field.Value.GetString();

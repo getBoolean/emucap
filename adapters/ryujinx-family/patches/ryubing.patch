@@ -466,6 +466,18 @@ index 49b2a38..2028030 100644
              renderLoopThread.Start();
  
              Thread nvidiaStutterWorkaround = null;
+diff --git a/src/Ryujinx.HLE/Loaders/Processes/ProcessLoader.cs b/src/Ryujinx.HLE/Loaders/Processes/ProcessLoader.cs
+--- a/src/Ryujinx.HLE/Loaders/Processes/ProcessLoader.cs
++++ b/src/Ryujinx.HLE/Loaders/Processes/ProcessLoader.cs
+@@ -239,7 +239,7 @@
+ 
+             if (Path.GetExtension(path).Equals(".nro", StringComparison.OrdinalIgnoreCase))
+             {
+-                FileStream input = new(path, FileMode.Open);
++                FileStream input = new(path, FileMode.Open, FileAccess.Read);
+                 NroExecutable nro = new(input.AsStorage());
+ 
+                 executable = nro;
 diff --git a/src/Ryujinx/Program.cs b/src/Ryujinx/Program.cs
 index 1bd68fa..04b3fb2 100644
 --- a/src/Ryujinx/Program.cs

@@ -33,11 +33,18 @@ The recipe verifies the embedded profile before publishing the admission sidecar
 Managed launch creates and selects the generation root before initialization.
 It uses only that root's keys, files and default configuration; updater/Discord
 initialization and executable-adjacent config import are disabled. The optional
-`emucap-config.json` within the generation root accepts only this curated field:
+`emucap-config.json` within the generation root accepts these optional fields:
 
 ```json
 {"preferred_gpu_vendor":"Intel"}
 ```
+
+`memory_manager_mode` accepts `SoftwarePageTable`, `HostMapped`, or
+`HostMappedUnsafe`; omitted fields retain upstream defaults. Linux Docker live
+qualification uses `{"memory_manager_mode":"SoftwarePageTable"}` because the
+default host-mapped mode aborts in this environment. Set
+`DOTNET_EnableAlternateStackCheck=1` in the Linux MCP server environment, matching
+the pinned upstream Linux launcher. This does not qualify other memory modes.
 
 The frontend verifies the native library's SHA-256 against its compiled constant
 before either `--emucap-build-profile` or native use. Its identity reports the
