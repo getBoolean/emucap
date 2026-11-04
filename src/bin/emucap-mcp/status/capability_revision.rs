@@ -86,5 +86,12 @@ mod profile_tests {
         changed = base.clone();
         changed["touch_capability"]["width"] = json!(1280);
         assert_ne!(capability_revision(&base), capability_revision(&changed));
+        changed = base.clone();
+        changed["touch_capability"]["bounds"] =
+            json!({"x_min":15,"x_max":304,"y_min":15,"y_max":224});
+        assert_ne!(capability_revision(&base), capability_revision(&changed));
+        let before = capability_revision(&changed);
+        changed["touch_capability"]["bounds"]["x_min"] = json!(16);
+        assert_ne!(before, capability_revision(&changed));
     }
 }

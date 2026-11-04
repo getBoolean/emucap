@@ -8,6 +8,7 @@
 #include "core/frontend/framebuffer_layout.h"
 #include "core/hle/kernel/k_process.h"
 #include "hid_core/hid_core.h"
+#include "hid_core/resources/touch_screen/touch_types.h"
 #include "input_common/drivers/virtual_gamepad.h"
 #include "input_common/drivers/touch_screen.h"
 #include <cstdio>
@@ -17,6 +18,9 @@
 
 static_assert(EmucapEden::TouchWidth==Layout::ScreenUndocked::Width &&
               EmucapEden::TouchHeight==Layout::ScreenUndocked::Height);
+static_assert(EmucapEden::TouchWidth==Service::HID::TouchSensorWidth &&
+              EmucapEden::TouchHeight==Service::HID::TouchSensorHeight &&
+              EmucapEden::TouchBorder==Service::HID::TouchBorders);
 
 inline bool EmucapPrintBuildProfile(int argc, char** argv) {
     if(argc!=2 || std::string_view{argv[1]}!="--emucap-build-profile") return false;

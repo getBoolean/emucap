@@ -1,10 +1,12 @@
 """Build preparation preserves edited source and binds the emitted native identity."""
 import importlib.util
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
 import unittest
+from unittest import mock
 
 ADAPTER = pathlib.Path(__file__).resolve().parent.parent
 SPEC = importlib.util.spec_from_file_location('eden_build', ADAPTER / 'build.py')
@@ -13,6 +15,46 @@ SPEC.loader.exec_module(BUILD)
 
 
 class PrepareTests(unittest.TestCase):
+    def test_runtime_dlls_follow_selected_compiler_instead_of_path_or_working_directory(self):
+        with tempfile.TemporaryDirectory(prefix='emucap-eden-runtime-') as directory:
+            root = pathlib.Path(directory).resolve()
+            build, destination = root / 'build', root / 'bin'
+            selected, older = root / 'selected', root / 'older'
+            for path in (build, destination, selected, older):
+                path.mkdir()
+            compiler = selected / 'g++.exe'
+            compiler.write_bytes(b'compiler fixture')
+            (build / 'CMakeCache.txt').write_text(
+                'CMAKE_CXX_COMPILER:FILEPATH=' + compiler.as_posix() + '\n', encoding='utf-8')
+            (selected / 'libstdc++-6.dll').write_bytes(b'selected absolute runtime')
+            (selected / 'libgcc_s_seh-1.dll').write_bytes(b'selected adjacent runtime')
+            (older / 'libstdc++-6.dll').write_bytes(b'older PATH runtime')
+            (root / 'libgcc_s_seh-1.dll').write_bytes(b'unrelated working directory runtime')
+
+            def query(actual_compiler, argument):
+                self.assertEqual(actual_compiler, compiler)
+                name = argument.removeprefix('-print-file-name=')
+                return str(selected / name) if name == 'libstdc++-6.dll' else name
+
+            previous = pathlib.Path.cwd()
+            try:
+                os.chdir(root)
+                with mock.patch.dict(os.environ, {'PATH': str(older)}), mock.patch.object(BUILD, 'output', query):
+                    BUILD.copy_windows_runtime(build, destination)
+            finally:
+                os.chdir(previous)
+            self.assertEqual((destination / 'libstdc++-6.dll').read_bytes(), b'selected absolute runtime')
+            self.assertEqual((destination / 'libgcc_s_seh-1.dll').read_bytes(), b'selected adjacent runtime')
+            self.assertEqual(sorted(path.name for path in destination.iterdir()),
+                             ['libgcc_s_seh-1.dll', 'libstdc++-6.dll'])
+
+    def test_runtime_copy_requires_recorded_compiler(self):
+        with tempfile.TemporaryDirectory(prefix='emucap-eden-cache-') as directory:
+            root = pathlib.Path(directory)
+            (root / 'CMakeCache.txt').write_text('CMAKE_BUILD_TYPE:STRING=Release\n', encoding='utf-8')
+            with self.assertRaisesRegex(RuntimeError, 'selected C\\+\\+ compiler'):
+                BUILD.copy_windows_runtime(root, root)
+
     def test_required_cpu_features_match_upstream_platform_flags(self):
         self.assertEqual(BUILD.cpu_features_for('x86_64-pc-windows-gnu'), ['cmpxchg16b', 'sse4.1'])
         self.assertEqual(BUILD.cpu_features_for('x86_64-unknown-linux-gnu'), ['cmpxchg16b'])

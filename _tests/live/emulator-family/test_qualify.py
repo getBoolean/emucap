@@ -30,6 +30,10 @@ class PixelAdmissionTests(unittest.TestCase):
             generation.mkdir(parents=True)
             output.mkdir()
             (generation / 'auth').write_text('private-network-credential')
+            native_log = generation / 'emulators/eden-family/log/eden_log.txt'
+            native_log.parent.mkdir(parents=True)
+            native_log.write_text('native startup diagnostics')
+            (native_log.parent.parent / 'private-user-data').write_text('do not collect')
             (generation / 'link.json').write_text(json.dumps({
                 'launch_id': 'launch-test', 'lease': {'control_session_key': 'private-control-key'},
                 'last_identity': {'session_token': 'private-network-credential', 'system': '3ds'}}))
@@ -39,6 +43,19 @@ class PixelAdmissionTests(unittest.TestCase):
             self.assertEqual(artifact['last_identity'], {'system': '3ds'})
             self.assertNotIn('private-', (output / 'runtime-link.json').read_text())
             self.assertFalse((output / 'auth').exists())
+            self.assertEqual((output / 'native-user.log').read_text(), 'native startup diagnostics')
+            self.assertFalse((output / 'private-user-data').exists())
+
+    def test_switch_requires_native_border_bounds_instead_of_clamped_edges(self):
+        valid = {'touch_capability': {'ports': [0], 'width': 1280, 'height': 720,
+                 'contacts': 1, 'coordinate_space': 'touchscreen',
+                 'bounds': {'x_min': 15, 'x_max': 1264, 'y_min': 15, 'y_max': 704}},
+                 'methods': ['hold_touch', 'release_touch']}
+        self.assertEqual(qualify.require_touch(valid, 'switch')['bounds']['x_min'], 15)
+        missing = dict(valid, touch_capability=dict(valid['touch_capability']))
+        missing['touch_capability'].pop('bounds')
+        with self.assertRaisesRegex(RuntimeError, 'coordinate bounds'):
+            qualify.require_touch(missing, 'switch')
 
     def image(self, path, identity=1, magic=0x454d5543):
         image = Image.new('RGB', (1280, 720), (48, 48, 48))

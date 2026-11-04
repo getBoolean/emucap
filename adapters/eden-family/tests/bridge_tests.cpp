@@ -15,10 +15,14 @@ int main() {
         try { (void)DecodeInput(bad); } catch (const std::exception&) { failed = true; }
         assert(failed);
     }
-    auto touch = DecodeTouch(Json{{"port",0},{"x",1279},{"y",719},{"release",false}});
-    assert(touch && touch->x == 1279 && touch->y == 719);
+    auto touch = DecodeTouch(Json{{"port",0},{"x",1264},{"y",704},{"release",false}});
+    assert(touch && touch->x == 1264 && touch->y == 704);
+    touch = DecodeTouch(Json{{"port",0},{"x",15},{"y",15}});
+    assert(touch && touch->x == 15 && touch->y == 15);
     assert(!DecodeTouch(Json{{"release",true}}));
-    for (const auto& bad : {Json{{"x",0},{"y",0},{"frames",1}},Json{{"release","true"}}}) {
+    for (const auto& bad : {Json{{"x",0},{"y",0},{"frames",1}},Json{{"release","true"}},
+                           Json{{"x",0},{"y",0}},Json{{"x",1279},{"y",719}},
+                           Json{{"x",14},{"y",15}},Json{{"x",1265},{"y",704}}}) {
         bool failed=false;
         try { (void)DecodeTouch(bad); } catch(const std::exception&) { failed=true; }
         assert(failed);

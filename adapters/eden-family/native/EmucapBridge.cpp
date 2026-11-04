@@ -209,7 +209,8 @@ std::optional<Touch> DecodeTouch(const Json& params) {
     if(params.contains("release")&&!params["release"].is_boolean()) throw std::invalid_argument("release must be boolean");
     if(params.value("release",false)) return {};
     const auto x=Number(params,"x",TouchWidth), y=Number(params,"y",TouchHeight);
-    if(x>=TouchWidth||y>=TouchHeight) throw std::invalid_argument("touch exceeds logical touchscreen bounds");
+    if(x<TouchXMin||x>TouchXMax||y<TouchYMin||y>TouchYMax)
+        throw std::invalid_argument("touch exceeds advertised native HID bounds");
     return Touch{uint32_t(x),uint32_t(y)};
 }
 std::vector<uint8_t> EncodePng(uint32_t width,uint32_t height,const std::vector<uint8_t>& bgra,bool invert_y) {
@@ -331,7 +332,8 @@ struct Bridge::Impl {
             {"contracts",{{"catalog","emucap-feature-contracts/v3"},{"active_exceptions",{"eden.input-touch.persistent-only"}}}},
             {"input_buttons",Buttons},
             {"input_axes",{{"semantics","complete_persistent_controller_state"},{"ports",Json::array({{{"port",0},{"axes",axes}}})}}},
-            {"touch_capability",{{"ports",{0}},{"width",TouchWidth},{"height",TouchHeight},{"coordinate_space","touchscreen"},{"contacts",1}}},
+            {"touch_capability",{{"ports",{0}},{"width",TouchWidth},{"height",TouchHeight},{"coordinate_space","touchscreen"},{"contacts",1},
+                {"bounds",{{"x_min",TouchXMin},{"x_max",TouchXMax},{"y_min",TouchYMin},{"y_max",TouchYMax}}}}},
             {"progress_capability",{{"domain","native_render_present"},{"max_count",5000},{"max_timeout_ms",250000},{"overshoot",true},{"running_only",true}}},
             {"temporal_cancellation_capability",{{"methods",{"wait_for_running_frames"}},{"control_service_ms",25},{"stop_host_ms",500}}},
             {"control_session_lifecycle",true},{"managed_user_root",config.user_root},

@@ -44,6 +44,9 @@ def collect_runtime_evidence(home, output):
     for path in home.glob('sessions/*/generations/*/emulator.log'):
         with path.open('rb') as source:
             (output / 'native.log').write_bytes(source.read(16 * 1024 * 1024))
+    for path in home.glob('sessions/*/generations/*/emulators/eden-family/log/eden_log.txt'):
+        with path.open('rb') as source:
+            (output / 'native-user.log').write_bytes(source.read(16 * 1024 * 1024))
 
 
 def decode(path, system):
@@ -83,6 +86,9 @@ def require_touch(status, system):
             or bounds.get('contacts') != 1 or bounds.get('coordinate_space') != 'touchscreen'
             or not {'hold_touch', 'release_touch'} <= set(status.get('methods', []))):
         raise RuntimeError('expected maintained-family touchscreen capability is absent or incompatible')
+    expected = None if system == '3ds' else {'x_min': 15, 'x_max': 1264, 'y_min': 15, 'y_max': 704}
+    if bounds.get('bounds') != expected:
+        raise RuntimeError('expected native touchscreen coordinate bounds are absent or incompatible')
     return bounds
 
 
@@ -252,8 +258,12 @@ def main():
             raise RuntimeError(f'guest did not consume controller release: {released}')
         bounds = touch_bounds
         if bounds:
-            for x, y in ((0, 0), (bounds['width'] // 2, bounds['height'] // 2),
-                         (bounds['width'] - 1, bounds['height'] - 1)):
+            rectangle = bounds.get('bounds') or {'x_min': 0, 'y_min': 0,
+                'x_max': bounds['width'] - 1, 'y_max': bounds['height'] - 1}
+            evidence['touch_bounds'] = rectangle
+            for x, y in ((rectangle['x_min'], rectangle['y_min']),
+                         (bounds['width'] // 2, bounds['height'] // 2),
+                         (rectangle['x_max'], rectangle['y_max'])):
                 debug('hold_touch', {'x': x, 'y': y})
                 touched = snapshot(f'touch-{x}-{y}')
                 tx, ty = touched['touch'] & 65535, touched['touch'] >> 16
@@ -261,6 +271,18 @@ def main():
                     raise RuntimeError(f'guest touch mapping mismatch: {(x, y)} -> {(tx, ty)}')
                 if args.system == '3ds' and touched['bottom_level'] != 192:
                     raise RuntimeError('combined capture did not contain the touched bottom screen')
+            if rectangle['x_min'] or rectangle['y_min']:
+                try:
+                    debug('hold_touch', {'x': 0, 'y': 0})
+                except RuntimeError as error:
+                    if 'advertised bounds' not in str(error):
+                        raise
+                else:
+                    raise RuntimeError('unsupported native touch border was accepted')
+                after_invalid = snapshot('touch-after-invalid-border')
+                if after_invalid['touch'] != touched['touch']:
+                    raise RuntimeError('rejected border touch changed the held native coordinate')
+                evidence['invalid_touch_preserved_hold'] = True
             debug('release_touch', {})
             touch_released = snapshot('touch-release')
             if touch_released['touch'] != 0xffffffff:

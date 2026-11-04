@@ -19,6 +19,21 @@ fn advertised_touch_geometry_validates_before_dispatch() {
 }
 
 #[test]
+fn native_hid_border_is_rejected_before_dispatch() {
+    let status = serde_json::json!({"touch_capability":{"ports":[0],"width":1280,"height":720,
+        "coordinate_space":"touchscreen","contacts":1,
+        "bounds":{"x_min":15,"x_max":1264,"y_min":15,"y_max":704}}});
+    assert!(validate_touch(&status, 0, Some(15), Some(15), None, false).is_ok());
+    assert!(validate_touch(&status, 0, Some(1264), Some(704), None, false).is_ok());
+    for (x, y) in [(0, 0), (1279, 719), (14, 15), (1265, 704)] {
+        assert!(validate_touch(&status, 0, Some(x), Some(y), None, false)
+            .unwrap_err()
+            .contains("bounds"));
+    }
+    assert!(validate_touch(&status, 0, None, None, None, true).is_ok());
+}
+
+#[test]
 fn debug_describe_projects_touch_and_native_progress_capabilities() {
     let status = serde_json::json!({"contracts":{"state":"validated"},
         "methods":["hold_touch","release_touch","wait_for_running_frames"],

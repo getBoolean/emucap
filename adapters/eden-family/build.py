@@ -98,6 +98,22 @@ def windows_openssl_options(target, arguments, source=None, build=None):
     return options
 
 
+def copy_windows_runtime(build, destination):
+    cache = (build / 'CMakeCache.txt').read_text(encoding='utf-8')
+    selected = re.search(r'^CMAKE_CXX_COMPILER:[^=]+=(.+)$', cache, re.MULTILINE)
+    if not selected:
+        raise RuntimeError('CMake did not record the selected C++ compiler')
+    compiler = pathlib.Path(selected.group(1).strip())
+    # Resolve against the selected compiler, even when PATH contains an older GCC.
+    for name in ('libstdc++-6.dll', 'libgcc_s_seh-1.dll', 'libwinpthread-1.dll',
+                 'libssp-0.dll', 'libc++.dll', 'libunwind.dll', 'libatomic-1.dll', 'libgomp-1.dll'):
+        runtime = pathlib.Path(output(compiler, '-print-file-name=' + name))
+        if not runtime.is_absolute() or not runtime.is_file():
+            runtime = compiler.parent / name
+        if runtime.is_file():
+            shutil.copy2(runtime, destination / name)
+
+
 def prepare(profile, source, destination, target, renderers, patch=None):
     revision = profile['revision']
     if not source.exists():
@@ -203,20 +219,33 @@ def main():
                '-DENABLE_OPENGL=' + ('ON' if 'opengl' in renderers else 'OFF')]
     if os.name == 'nt' or sys.platform == 'darwin':
         options.append('-DYUZU_USE_BUNDLED_FFMPEG=ON')
+    if os.name == 'nt' and target.endswith('windows-gnu'):
+        # httplib's optional async resolver references GetAddrInfoExCancel,
+        # which is absent even from the tested MinGW-w64 14 headers.
+        options.append('-DHTTPLIB_USE_NON_BLOCKING_GETADDRINFO=OFF')
+        # Avoid windres's cmd.exe/popen limit with long dependency include paths.
+        options.append('-DCMAKE_RC_FLAGS=--use-temp-file')
     if arch == 'x86_64':
         options.append('-DCMAKE_CXX_FLAGS=-march=x86-64 -mtune=generic')
     options.extend(windows_openssl_options(target, args.cmake_arg, source, build))
     run(args.cmake, '-S', source, '-B', build, '-G', args.generator, *options, *args.cmake_arg)
     run(args.cmake, '--build', build, '--target', 'yuzu-cmd', '--parallel', str(args.jobs))
     suffix = '.exe' if os.name == 'nt' else ''
-    candidates = [build / 'bin' / ('yuzu-cmd' + suffix), build / 'bin' / ('eden-sdl' + suffix),
-                  build / 'bin' / 'Release' / ('yuzu-cmd' + suffix)]
+    candidates = [directory / (name + suffix)
+                  for directory in (build / 'bin', build / 'bin' / 'Release')
+                  for name in ('eden-cli', 'yuzu-cmd', 'eden-sdl')]
     binary = next((path for path in candidates if path.is_file()), None)
     if binary is None:
         raise RuntimeError('native build produced no recognized SDL binary')
     shutil.copy2(binary, destination / ('eden-sdl' + suffix))
     for library in binary.parent.glob('*.dll'):
         shutil.copy2(library, destination / library.name)
+    if os.name == 'nt' and target.endswith('windows-gnu'):
+        copy_windows_runtime(build, destination)
+    probe = subprocess.run([str(destination / ('eden-sdl' + suffix)), '--emucap-build-profile'],
+                           capture_output=True, text=True, encoding='utf-8', timeout=15)
+    if probe.returncode or len(probe.stdout) > 65536 or json.loads(probe.stdout) != build_profile:
+        raise RuntimeError('Built executable did not return its matching compiled profile')
     metadata = destination / 'emucap-emulator-build.json'
     pending = metadata.with_suffix('.json.tmp')
     pending.write_text(json.dumps(build_profile, indent=2) + '\n', encoding='utf-8')

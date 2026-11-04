@@ -285,7 +285,7 @@
     {
       "id": "INPUT.TOUCH.HOLD.1",
       "category": "postcondition",
-      "expression": "hold_touch(x,y).ok => touch_override_engaged(after) and touch_position(after) = (x,y)"
+      "expression": "hold_touch(x,y).ok => within(advertised_touch_bounds,x,y) and touch_override_engaged(after) and touch_position(after) = (x,y)"
     },
     {
       "id": "INPUT.TOUCH.RELEASE.1",

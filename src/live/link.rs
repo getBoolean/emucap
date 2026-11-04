@@ -271,16 +271,28 @@ impl FeatureCapabilities {
     }
 }
 
-/// Absolute single-contact input. A capability here provides persistent hold/release only;
-/// legacy NDS timed input remains governed by its existing wire contract.
+/// Inclusive native coordinates within the logical touchscreen.
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(deny_unknown_fields)]
+pub struct TouchBounds {
+    pub x_min: u64,
+    pub x_max: u64,
+    pub y_min: u64,
+    pub y_max: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// Absolute single-contact input with persistent hold/release only.
+/// Legacy NDS timed input remains governed by its existing wire contract.
 pub struct TouchCapability {
     pub ports: Vec<u64>,
     pub width: u64,
     pub height: u64,
     pub coordinate_space: String,
     pub contacts: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<TouchBounds>,
 }
 
 impl TouchCapability {
@@ -292,6 +304,12 @@ impl TouchCapability {
             || !(1..=8192).contains(&capability.height)
             || capability.contacts != 1
             || capability.coordinate_space != "touchscreen"
+            || capability.bounds.as_ref().is_some_and(|bounds| {
+                bounds.x_min > bounds.x_max
+                    || bounds.y_min > bounds.y_max
+                    || bounds.x_max >= capability.width
+                    || bounds.y_max >= capability.height
+            })
         {
             return Err("invalid absolute touchscreen capability".into());
         }
@@ -315,10 +333,25 @@ impl TouchCapability {
         if frames.is_some() {
             return Err("this touchscreen supports persistent hold/release only".into());
         }
-        if x.is_none_or(|x| x >= self.width) || y.is_none_or(|y| y >= self.height) {
-            return Err("touch requires coordinates inside the advertised touchscreen".into());
+        let bounds = self.effective_bounds();
+        if x.is_none_or(|x| !(bounds.x_min..=bounds.x_max).contains(&x))
+            || y.is_none_or(|y| !(bounds.y_min..=bounds.y_max).contains(&y))
+        {
+            return Err(format!(
+                "touch requires coordinates inside advertised bounds: x={}..={}, y={}..={}",
+                bounds.x_min, bounds.x_max, bounds.y_min, bounds.y_max
+            ));
         }
         Ok(())
+    }
+
+    fn effective_bounds(&self) -> TouchBounds {
+        self.bounds.clone().unwrap_or(TouchBounds {
+            x_min: 0,
+            x_max: self.width - 1,
+            y_min: 0,
+            y_max: self.height - 1,
+        })
     }
 }
 
@@ -348,6 +381,40 @@ mod touch_capability_tests {
             let mut invalid = value.clone();
             invalid[key] = bad;
             assert!(TouchCapability::from_hello(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn native_touch_rectangle_rejects_clamped_edges_and_invalid_bounds() {
+        let value = json!({"ports":[0],"width":1280,"height":720,"coordinate_space":"touchscreen",
+            "contacts":1,"bounds":{"x_min":15,"x_max":1264,"y_min":15,"y_max":704}});
+        let touch = TouchCapability::from_hello(&value).unwrap();
+        for (x, y) in [(15, 15), (640, 360), (1264, 704)] {
+            assert!(touch
+                .validate_input(0, Some(x), Some(y), None, false)
+                .is_ok());
+        }
+        for (x, y) in [
+            (0, 0),
+            (14, 15),
+            (1265, 15),
+            (15, 14),
+            (15, 705),
+            (1279, 719),
+        ] {
+            assert!(touch
+                .validate_input(0, Some(x), Some(y), None, false)
+                .is_err());
+        }
+        assert!(touch.validate_input(0, None, None, None, true).is_ok());
+        for bounds in [
+            json!({"x_min":16,"x_max":15,"y_min":15,"y_max":704}),
+            json!({"x_min":15,"x_max":1280,"y_min":15,"y_max":704}),
+            json!({"x_min":15,"x_max":1264,"y_min":15,"y_max":720}),
+        ] {
+            let mut bad = value.clone();
+            bad["bounds"] = bounds;
+            assert!(TouchCapability::from_hello(&bad).is_err());
         }
     }
 }

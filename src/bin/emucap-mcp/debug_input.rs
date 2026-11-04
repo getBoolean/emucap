@@ -43,7 +43,7 @@ pub(super) fn describe(status: &Value, operations: &mut Map<String, Value>) {
         operations,
         status,
         "hold_touch",
-        "Hold one touch-screen coordinate until release_touch or generation termination.",
+        "Hold an absolute touchscreen coordinate inside status.touch_capability.bounds until release_touch or generation termination. Without bounds, use 0..width-1 and 0..height-1.",
     );
     add::<ReleaseTouchArgs>(
         operations,

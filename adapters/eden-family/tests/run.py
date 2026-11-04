@@ -123,8 +123,11 @@ def exercise(binary, root):
         assert hello['contracts']['active_exceptions'] == ['eden.input-touch.persistent-only']
         assert terminal(send('set_input', {'port': 0, 'buttons': ['a'], 'axes': {'stick_x': 32767}}))['ok']
         await_file(root / 'input.json', lambda value: value == {'a': True, 'stick_x': 32767})
-        assert terminal(send('touch', {'port': 0, 'x': 1279, 'y': 719, 'release': False}))['ok']
-        await_file(root / 'touch.json', lambda value: value == {'x': 1279, 'y': 719})
+        assert hello['touch_capability']['bounds'] == {'x_min': 15, 'x_max': 1264, 'y_min': 15, 'y_max': 704}
+        assert terminal(send('touch', {'port': 0, 'x': 1264, 'y': 704, 'release': False}))['ok']
+        await_file(root / 'touch.json', lambda value: value == {'x': 1264, 'y': 704})
+        assert not terminal(send('touch', {'port': 0, 'x': 0, 'y': 0, 'release': False}))['ok']
+        assert json.loads((root / 'touch.json').read_text()) == {'x': 1264, 'y': 704}
         image = terminal(send('screenshot'))['result']
         png = base64.b64decode(image['png_base64'])
         assert png[:8] == b'\x89PNG\r\n\x1a\n'

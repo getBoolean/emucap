@@ -14,6 +14,9 @@ namespace EmucapEden {
 using Json = nlohmann::json;
 inline constexpr size_t MaxFrameBytes = 8 * 1024 * 1024;
 inline constexpr uint32_t TouchWidth = 1280, TouchHeight = 720;
+inline constexpr uint32_t TouchBorder = 15;
+inline constexpr uint32_t TouchXMin = TouchBorder, TouchXMax = TouchWidth - TouchBorder - 1;
+inline constexpr uint32_t TouchYMin = TouchBorder, TouchYMax = TouchHeight - TouchBorder - 1;
 inline constexpr std::array<const char*,20> Buttons{
     "a","b","x","y","lstick","rstick","l","r","zl","zr",
     "plus","minus","left","up","right","down","sl","sr","home","capture"};

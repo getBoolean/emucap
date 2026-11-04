@@ -519,10 +519,10 @@ pub(crate) struct DragPointerArgs {
 pub(crate) struct TouchArgs {
     #[serde(default)]
     pub(crate) port: u64,
-    /// Absolute touchscreen X coordinate within status.touch_capability.width. Required unless releasing.
+    /// Absolute touchscreen X within status.touch_capability.bounds, or 0..width-1 when bounds are absent. Required unless releasing.
     #[serde(default)]
     pub(crate) x: Option<u64>,
-    /// Absolute touchscreen Y coordinate within status.touch_capability.height. Required unless releasing.
+    /// Absolute touchscreen Y within status.touch_capability.bounds, or 0..height-1 when bounds are absent. Required unless releasing.
     #[serde(default)]
     pub(crate) y: Option<u64>,
     /// Optional tap duration. When present, return after the frames have advanced
