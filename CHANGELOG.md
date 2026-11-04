@@ -4,6 +4,17 @@ Release compatibility is defined in [COMPATIBILITY.md](COMPATIBILITY.md).
 
 ## Unreleased
 
+### Added
+- Experimental managed Azahar libretro and shared Eden-family bridges for 3DS,
+  Switch and the experimental Switch 2 forks. Eglantine uses Djihads80/Eglantine
+  `nx2`. Matched native profiles, isolated storage and bounded no-guest identity
+  probes precede replacement; live capabilities govern input and capture.
+- Cancellable running progress observation with explicit native event domains,
+  absolute touchscreen capabilities, lawful homebrew witnesses, and separate
+  synthetic, native-build and live CI lanes. Exact stepping and timed input
+  remain absent for these profiles. See [qualification](docs/emulator-family-qualification.md)
+  for measured support and blockers.
+
 ## 1.1.0
 
 ### Added

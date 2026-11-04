@@ -119,3 +119,28 @@ openMSX
 
 Upstream license determinations were made from each project's source-file SPDX
 headers and README, not from the bare COPYING boilerplate.
+
+Azahar
+  Upstream: https://github.com/azahar-emu/azahar
+  Pinned source: 9c38437daad90a2f05f55a047d04d4073a476456
+  License: GPL-2.0-or-later; bundled dependencies retain upstream notices.
+  Used by: adapters/azahar (libretro source patches and build recipe).
+  Distribution: source patches, private Python worker and Rust supervisor;
+                no emulator library, firmware, keys, or game media.
+
+Eden family
+  Sources: https://git.eden-emu.dev/eden-emu/eden
+           https://git.eden-emu.dev/Takoroka/eden-nx2
+           https://github.com/Djihads80/Eglantine
+  Exact revisions: adapters/eden-family/profiles/*.json
+  License: GPL-3.0-or-later for native producer/integration and upstream
+           combined builds; bundled dependencies retain their own notices.
+  Used by: adapters/eden-family (shared SDL producer, per-pin integration
+           patches, compiled build identity and build recipes).
+  Distribution: source and build recipes, no emulator binaries, proprietary
+                firmware, keys, or game media. Redistributors of built emulators
+                must retain corresponding source and dependency notices.
+
+Emulator witness fixtures
+  Original sources: _tests/live/emulator-family/{ctr.c,switch.c}
+  License: CC0-1.0 (per source SPDX headers). No Nintendo SDK code or assets.

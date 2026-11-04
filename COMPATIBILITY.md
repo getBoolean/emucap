@@ -35,6 +35,16 @@ versions may advance within 1.x, requiring an adapter rebuild. Older incompatibl
 hosts are rejected explicitly. Adapter wire protocols and the internal Rust library
 are implementation interfaces, outside the consumer compatibility promise.
 
+The Azahar libretro and Eden-family profiles are experimental. An
+`emucap-emulator-build/v1` sidecar must match the native compiled profile, selected
+system, renderer, host architecture, and bridge API. A stock executable or edited
+sidecar does not provide the bridge. Exact stepping, timed input, save states,
+memory access, and debugger commands remain absent unless that generation
+explicitly advertises their contracts. `wait_for_running_frames` observes its
+declared native progress domain while already running and reports overshoot;
+it does not establish an exact guest-frame boundary. See
+[per-profile qualification](docs/emulator-family-qualification.md).
+
 ## Stored data
 
 Emucap-owned records use their declared schema versions. Existing supported versions

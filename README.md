@@ -83,10 +83,18 @@ The core exposes two MCP servers: **Control** drives the emulator, while optiona
 | Mupen64Plus | Nintendo 64 |
 | openMSX | MSX1 / MSX2 / MSX2+ |
 | xemu | Original Xbox |
+| Azahar libretro (experimental) | Nintendo 3DS |
+| Eden family (experimental) | Switch; Switch 2 targets in Eden-NX2 and Eglantine |
 
 See the [adapter guide](AGENT_GUIDE.md#per-emulator-adapters-the-agent-installs-when-needed)
 for setup and each profile’s supported scope. emucap maintains source patches where
 native emulator changes are needed for control and observation.
+
+The new Azahar and Eden-family integrations require matched source-patched builds.
+Their registration and protocol tests do not establish guest compatibility.
+See the [qualification record](docs/emulator-family-qualification.md) for exact pins,
+build results, live blockers, and unsupported operations. Eglantine uses
+[Djihads80/Eglantine](https://github.com/Djihads80/Eglantine), branch `nx2`.
 
 ## Project status
 

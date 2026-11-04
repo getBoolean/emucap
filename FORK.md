@@ -1,5 +1,11 @@
 # Pico emulator packages
 
+The development branch also adds experimental Azahar and shared Eden-family
+integration. These changes are local source work, separate from the published
+Pico packages described below. See [qualification and build evidence](docs/emulator-family-qualification.md).
+Eglantine is pinned to Djihads80/Eglantine `nx2`; the earlier Selevet target is
+superseded. Core and Pico release workflows retain their separate purposes.
+
 This fork adds the optional `nds_storage_image` managed-launch argument to
 emucap 1.1.0. It publishes Windows x86-64 and Linux x86-64 core and native
 DeSmuME packages. Starting with `1.1.0-pico.2`, the native adapter also corrects

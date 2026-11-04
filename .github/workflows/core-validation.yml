@@ -74,6 +74,9 @@ jobs:
       - name: Check formatting
         working-directory: source
         run: cargo fmt --all -- --check
+      - name: Test extracted-package resource boundaries
+        working-directory: source
+        run: python _tests/release/package_core_tests.py
       - name: Test shared behavior
         timeout-minutes: 15
         working-directory: source
