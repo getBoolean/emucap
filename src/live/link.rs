@@ -170,6 +170,7 @@ pub struct Capabilities {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FeatureCapabilities {
+    pub progress: Option<super::progress::ProgressCapability>,
     pub temporal_cancellation: Option<super::temporal::CancellationCapability>,
     pub memory_batch: Option<super::memory_batch::MemoryBatchCapability>,
     pub execution_speed: Option<super::pacing::ExecutionSpeedCapability>,
@@ -225,6 +226,11 @@ impl FeatureCapabilities {
                 "{method} and {field} must be advertised together"
             ))),
         };
+        let progress = paired(super::progress::METHOD, "progress_capability")?
+            .map(|value| {
+                super::progress::ProgressCapability::from_hello(value).map_err(LinkError::Protocol)
+            })
+            .transpose()?;
         let memory_batch = paired(super::memory_batch::METHOD, "memory_batch_capability")?
             .map(|value| {
                 super::memory_batch::MemoryBatchCapability::from_hello(value, memory_types)
@@ -244,6 +250,7 @@ impl FeatureCapabilities {
             })
             .transpose()?;
         Ok(Self {
+            progress,
             memory_batch,
             execution_speed,
             temporal_cancellation,

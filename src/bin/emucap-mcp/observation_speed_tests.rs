@@ -51,6 +51,7 @@ impl EmulatorLink for ScriptedLink {
 
 fn features() -> FeatureCapabilities {
     FeatureCapabilities {
+        progress: None,
         temporal_cancellation: None,
         memory_batch: Some(
             MemoryBatchCapability::from_hello(

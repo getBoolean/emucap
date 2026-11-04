@@ -11,6 +11,8 @@ pub(super) const CAPABILITY_FIELDS: &[&str] = &[
     "breakpoint_kinds",
     "input_buttons",
     "input_axes",
+    "touch_capability",
+    "progress_capability",
     "input_poll_capability",
     "host_features",
     "contracts",
@@ -66,4 +68,22 @@ pub(crate) fn apply_capability_revision(
     value["capability_revision"] = serde_json::json!(revision);
     value["capability_snapshot"] = serde_json::json!(if unchanged { "unchanged" } else { "full" });
     revision
+}
+
+#[cfg(test)]
+mod profile_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn native_progress_domain_and_touch_geometry_change_revision() {
+        let base = json!({"progress_capability":{"domain":"native_guest_present"},
+            "touch_capability":{"width":320,"height":240}});
+        let mut changed = base.clone();
+        changed["progress_capability"]["domain"] = json!("libretro_present");
+        assert_ne!(capability_revision(&base), capability_revision(&changed));
+        changed = base.clone();
+        changed["touch_capability"]["width"] = json!(1280);
+        assert_ne!(capability_revision(&base), capability_revision(&changed));
+    }
 }

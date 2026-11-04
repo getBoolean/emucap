@@ -10,6 +10,31 @@ fn embedded_contract_sources_validate() {
 }
 
 #[test]
+fn running_progress_wait_has_observation_not_exact_step_contract() {
+    let feature = catalog()
+        .features
+        .iter()
+        .find(|feature| feature.id == "execution.wait-running")
+        .expect("running progress waits need their own feature contract");
+    assert_eq!(feature.route.as_deref(), Some("debug"));
+    assert_eq!(feature.methods, ["wait_for_running_frames"]);
+    assert!(feature
+        .expectations
+        .iter()
+        .any(|value| value == "EXEC.WAIT.RUNNING.1"));
+    assert!(!feature
+        .expectations
+        .iter()
+        .any(|value| value == "TIME.EXACT.1" || value == "TIME.STOP.1"));
+    let methods = vec!["wait_for_running_frames".into()];
+    let ad = advertisement_from_hello(&serde_json::json!({"contracts":advertisement_value(&[])}));
+    assert_eq!(
+        validate_advertisement(&ad, Some("eden-family-native"), Some("switch2"), &methods).state,
+        "validated"
+    );
+}
+
+#[test]
 fn multi_operation_public_feature_can_expose_each_method_directly() {
     let mut catalog = catalog().clone();
     let feature = catalog
