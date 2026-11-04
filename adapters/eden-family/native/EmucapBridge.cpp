@@ -374,6 +374,8 @@ struct Bridge::Impl {
             else if(method=="set_input") { auto input=DecodeInput(params,config.allowed_buttons);hooks.input(input);Finish(job,Success(id,{{"input_set",true},{"port",0}})); }
             else if(method=="touch") { auto value=DecodeTouch(params,config.touch_x_min,config.touch_x_max,config.touch_y_min,config.touch_y_max);hooks.touch(value);Finish(job,Success(id,{{"released",!value.has_value()},{"port",0}})); }
             else if((method=="pause"||method=="resume")&&hooks.set_running) {
+                if(params.contains("cpu")&&!params["cpu"].is_null())
+                    throw std::invalid_argument("CPU-specific execution state is unsupported");
                 const bool running=method=="resume";
                 if(!hooks.set_running(running)||hooks.running()!=running)
                     throw std::runtime_error("native execution state change failed");

@@ -111,6 +111,13 @@ def exercise(library):
         for wrong in (dict(profile, family="eden-family"), dict(profile, bridge_api=2)):
             profile_path.write_text(json.dumps(wrong))
             assert not dll.emucap_native_create(c.byref(options), c.byref(callbacks), error, len(error))
+        # Matching sidecar/compiled inputs must still fail family/API admission itself.
+        for wrong in (dict(profile, family="eden-family"), dict(profile, bridge_api=2)):
+            profile_path.write_text(json.dumps(wrong))
+            options.profile_json = json.dumps(wrong).encode()
+            assert not dll.emucap_native_create(c.byref(options), c.byref(callbacks), error, len(error))
+            assert b"environment/build mismatch" in error.value, error.value
+        options.profile_json = json.dumps(profile).encode()
         profile_path.write_text(json.dumps(profile))
         os.environ["EMUCAP_SYSTEM"] = "switch2"
         assert not dll.emucap_native_create(c.byref(options), c.byref(callbacks), error, len(error))
@@ -188,8 +195,10 @@ def exercise(library):
             state["mode"] = "fail"
             failed = call("screenshot")
             assert not failed["ok"] and failed["error"]["kind"] == "capture_failed"
+            assert not call("pause", {"cpu": "arm9"})["ok"] and state["running"]
             assert call("pause")["ok"] and not state["running"]
             assert not call("screenshot")["result"]["fresh"]
+            assert not call("resume", {"cpu": "arm9"})["ok"] and not state["running"]
             assert call("resume")["ok"] and state["running"]
             state["mode"] = "pending"
             previous = state["capture"]
