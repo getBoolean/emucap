@@ -7,6 +7,9 @@ use std::fs::{self, File, OpenOptions};
 use std::io::{self, Read, Write};
 use std::path::{Path, PathBuf};
 
+#[path = "content_identity/exefs.rs"]
+mod exefs;
+
 const MAX_PERSISTED_IDENTITY_BYTES: usize = 96 * 1024;
 const APPROVAL_BINDING_DOMAIN: &[u8] = b"emucap-indirect-media-approval\0";
 
@@ -54,6 +57,7 @@ pub enum IndirectMediaAdmission {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 #[serde(rename_all = "snake_case")]
 pub enum ContentIdentityScope {
+    ExeFsGraph,
     CueGraph,
     GdiGraph,
     CcdGraph,
@@ -139,6 +143,9 @@ pub fn stage_verified_composite_content(
         .and_then(|value| value.to_str())
         .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidInput, "entry has no UTF-8 name"))?;
     if entry.declared_name != source_name
+        && !(identity.scope == ContentIdentityScope::ExeFsGraph
+            && entry.declared_name == "exefs/main"
+            && source_name == "main")
         || !crate::path_safety::is_portable_relative_member(&entry.declared_name)
     {
         return Err(io::Error::new(
@@ -156,7 +163,9 @@ pub fn stage_verified_composite_content(
                     "composite identity contains an unsafe member name",
                 ));
             }
-            let input = if index == 0 {
+            let input = if identity.scope == ContentIdentityScope::ExeFsGraph {
+                exefs::source_member(source_entry, &member.declared_name)?
+            } else if index == 0 {
                 crate::path_safety::open_regular_file_no_follow(source_entry)?
             } else {
                 crate::path_safety::open_regular_member_no_follow(
@@ -511,6 +520,17 @@ fn discover_indirect_members(
     adapter: &str,
     approved: &BTreeSet<String>,
 ) -> io::Result<Vec<IndirectMediaMember>> {
+    if exefs::selected(path, Some(adapter)) {
+        return Ok(exefs::members(path)?
+            .into_iter()
+            .skip(1)
+            .map(|declared_name| IndirectMediaMember {
+                declared_name,
+                role: IndirectMediaMemberRole::Companion,
+                optional: false,
+            })
+            .collect());
+    }
     let extension = composite_extension(path).ok_or_else(|| {
         io::Error::new(
             io::ErrorKind::InvalidInput,
@@ -562,7 +582,7 @@ pub fn inspect_indirect_media(
     adapter: &str,
     approval: Option<&IndirectMediaApproval>,
 ) -> io::Result<IndirectMediaAdmission> {
-    if composite_extension(path).is_none() {
+    if composite_extension(path).is_none() && !exefs::selected(path, Some(adapter)) {
         return Ok(IndirectMediaAdmission::NotRequired);
     }
     let binding = entry_binding(path, adapter)?;
@@ -689,6 +709,9 @@ pub fn identify_composite_content_for_adapter(
     path: &Path,
     adapter: Option<&str>,
 ) -> io::Result<Option<ContentIdentity>> {
+    if exefs::selected(path, adapter) {
+        return exefs::identity(path).map(Some);
+    }
     let extension = path
         .extension()
         .and_then(|value| value.to_str())
@@ -776,6 +799,10 @@ pub fn validate_composite_content_for_adapter(
     path: &Path,
     adapter: Option<&str>,
 ) -> io::Result<bool> {
+    if exefs::selected(path, adapter) {
+        exefs::members(path)?;
+        return Ok(true);
+    }
     let extension = path
         .extension()
         .and_then(|value| value.to_str())

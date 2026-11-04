@@ -1,6 +1,93 @@
 use super::*;
 
 #[test]
+fn exefs_metadata_and_romfs_are_bound_and_staged_together() {
+    let directory = tempfile::tempdir().unwrap();
+    let exefs = directory.path().join("exefs");
+    let romfs = directory.path().join("romfs");
+    std::fs::create_dir(&exefs).unwrap();
+    std::fs::create_dir(&romfs).unwrap();
+    let entry = exefs.join("main");
+    std::fs::write(&entry, b"NSO0-homebrew").unwrap();
+    std::fs::write(exefs.join("main.npdm"), b"metadata-one").unwrap();
+    std::fs::write(romfs.join("message.txt"), b"hello").unwrap();
+    let before = identify_composite_content_for_adapter(&entry, Some("eden_family"))
+        .unwrap()
+        .unwrap();
+    std::fs::write(exefs.join("main.npdm"), b"metadata-two").unwrap();
+    let after = identify_composite_content_for_adapter(&entry, Some("eden_family"))
+        .unwrap()
+        .unwrap();
+    assert_ne!(before.digest, after.digest);
+    assert!(after
+        .members
+        .iter()
+        .any(|member| member.declared_name == "romfs/message.txt"));
+    let staged = stage_verified_composite_content(
+        &entry,
+        "eden_family",
+        &after,
+        &directory.path().join("staged"),
+    )
+    .unwrap();
+    assert_eq!(
+        identify_composite_content_for_adapter(&staged, Some("eden_family"))
+            .unwrap()
+            .unwrap(),
+        after
+    );
+    assert!(stage_verified_composite_content(
+        &entry,
+        "eden_family",
+        &before,
+        &directory.path().join("stale")
+    )
+    .is_err());
+}
+
+#[test]
+fn exefs_requires_complete_review_and_missing_metadata_is_not_single_file() {
+    let directory = tempfile::tempdir().unwrap();
+    let entry = directory.path().join("main");
+    std::fs::write(&entry, b"NSO0-homebrew").unwrap();
+    assert!(identify_composite_content_for_adapter(&entry, Some("eden_family")).is_err());
+    std::fs::write(directory.path().join("main.npdm"), b"metadata").unwrap();
+    let IndirectMediaAdmission::Review { approval, .. } =
+        inspect_indirect_media(&entry, "eden_family", None).unwrap()
+    else {
+        panic!("ExeFS companions need review")
+    };
+    assert!(approval
+        .members
+        .iter()
+        .any(|name| name.ends_with("main.npdm")));
+    assert!(identify_approved_composite_content_for_adapter(&entry, "eden_family", None).is_err());
+    assert!(identify_approved_composite_content_for_adapter(
+        &entry,
+        "eden_family",
+        Some(&approval)
+    )
+    .unwrap()
+    .is_some());
+    std::fs::write(directory.path().join("subsdk0"), b"NSO0-module").unwrap();
+    assert!(matches!(
+        inspect_indirect_media(&entry, "eden_family", Some(&approval)).unwrap(),
+        IndirectMediaAdmission::Review { .. }
+    ));
+}
+
+#[cfg(unix)]
+#[test]
+fn exefs_rejects_symlinked_romfs_members() {
+    let directory = tempfile::tempdir().unwrap();
+    let entry = directory.path().join("main");
+    std::fs::write(&entry, b"NSO0-homebrew").unwrap();
+    std::fs::write(directory.path().join("main.npdm"), b"metadata").unwrap();
+    std::os::unix::fs::symlink("main.npdm", directory.path().join("subsdk0")).unwrap();
+    assert!(identify_composite_content_for_adapter(&entry, Some("eden_family")).is_err());
+}
+
+#[test]
 fn content_path_binding_uses_the_existing_filesystem_referent() {
     let directory = tempfile::tempdir().unwrap();
     let content = directory.path().join("game.rom");
