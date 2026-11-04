@@ -1,0 +1,490 @@
+diff --git a/src/Ryujinx.Common/Configuration/AppDataManager.cs b/src/Ryujinx.Common/Configuration/AppDataManager.cs
+index cb26be2..a497d31 100644
+--- a/src/Ryujinx.Common/Configuration/AppDataManager.cs
++++ b/src/Ryujinx.Common/Configuration/AppDataManager.cs
+@@ -49,6 +49,17 @@ namespace Ryujinx.Common.Configuration
+ 
+         public static void Initialize(string baseDirPath)
+         {
++            string managedRoot = Environment.GetEnvironmentVariable("EMUCAP_USER_ROOT");
++            if (!string.IsNullOrEmpty(Environment.GetEnvironmentVariable("EMUCAP_PORT")))
++            {
++                if (string.IsNullOrEmpty(managedRoot) || !Directory.Exists(managedRoot) ||
++                    !string.Equals(Path.GetFullPath(baseDirPath), Path.GetFullPath(managedRoot), OperatingSystem.IsWindows() ? StringComparison.OrdinalIgnoreCase : StringComparison.Ordinal))
++                    throw new InvalidOperationException("Managed root was not initialized");
++                BaseDirPath = Path.GetFullPath(managedRoot);
++                Mode = LaunchMode.Custom;
++                SetupBasePaths();
++                return;
++            }
+             string appDataPath = Environment.GetFolderPath(Environment.SpecialFolder.ApplicationData);
+ 
+             if (appDataPath.Length == 0)
+diff --git a/src/Ryujinx.Common/Logging/Targets/ConsoleLogTarget.cs b/src/Ryujinx.Common/Logging/Targets/ConsoleLogTarget.cs
+index 391cc51..652719c 100644
+--- a/src/Ryujinx.Common/Logging/Targets/ConsoleLogTarget.cs
++++ b/src/Ryujinx.Common/Logging/Targets/ConsoleLogTarget.cs
+@@ -9,6 +9,9 @@ namespace Ryujinx.Common.Logging.Targets
+ 
+         private readonly string _name;
+ 
++        // Detached managed launches retain redirected logging, without a console handle.
++        private readonly bool _useConsoleColors = string.IsNullOrEmpty(Environment.GetEnvironmentVariable("EMUCAP_PORT"));
++
+         string ILogTarget.Name { get => _name; }
+ 
+         private static ConsoleColor GetLogColor(LogLevel level) => level switch
+@@ -30,15 +33,15 @@ namespace Ryujinx.Common.Logging.Targets
+ 
+         public void Log(object sender, LogEventArgs args)
+         {
+-            Console.ForegroundColor = GetLogColor(args.Level);
++            if (_useConsoleColors) Console.ForegroundColor = GetLogColor(args.Level);
+             Console.WriteLine(_formatter.Format(args));
+-            Console.ResetColor();
++            if (_useConsoleColors) Console.ResetColor();
+         }
+ 
+         public void Dispose()
+         {
+             GC.SuppressFinalize(this);
+-            Console.ResetColor();
++            if (_useConsoleColors) Console.ResetColor();
+         }
+     }
+ }
+diff --git a/src/Ryujinx.Graphics.GAL/IRenderer.cs b/src/Ryujinx.Graphics.GAL/IRenderer.cs
+index cc51ed6..c328116 100644
+--- a/src/Ryujinx.Graphics.GAL/IRenderer.cs
++++ b/src/Ryujinx.Graphics.GAL/IRenderer.cs
+@@ -8,6 +8,7 @@ namespace Ryujinx.Graphics.GAL
+ {
+     public interface IRenderer : IDisposable
+     {
++        long PresentedFrameCount => Window.PresentedFrameCount;
+         event EventHandler<ScreenCaptureImageInfo> ScreenCaptured;
+ 
+         bool PreferThreading { get; }
+diff --git a/src/Ryujinx.Graphics.GAL/IWindow.cs b/src/Ryujinx.Graphics.GAL/IWindow.cs
+index 48144f0..dc76a49 100644
+--- a/src/Ryujinx.Graphics.GAL/IWindow.cs
++++ b/src/Ryujinx.Graphics.GAL/IWindow.cs
+@@ -5,6 +5,7 @@ namespace Ryujinx.Graphics.GAL
+ {
+     public interface IWindow
+     {
++        long PresentedFrameCount => 0;
+         void Present(ITexture texture, ImageCrop crop, Action swapBuffersCallback);
+ 
+         void SetSize(int width, int height);
+diff --git a/src/Ryujinx.Graphics.GAL/Multithreading/ThreadedRenderer.cs b/src/Ryujinx.Graphics.GAL/Multithreading/ThreadedRenderer.cs
+index 42a0bd9..4608461 100644
+--- a/src/Ryujinx.Graphics.GAL/Multithreading/ThreadedRenderer.cs
++++ b/src/Ryujinx.Graphics.GAL/Multithreading/ThreadedRenderer.cs
+@@ -60,6 +60,7 @@ namespace Ryujinx.Graphics.GAL.Multithreading
+         private Action _interruptAction;
+         private readonly Lock _interruptLock = new();
+ 
++        public long PresentedFrameCount => _baseRenderer.PresentedFrameCount;
+         public event EventHandler<ScreenCaptureImageInfo> ScreenCaptured;
+ 
+         internal BufferMap Buffers { get; }
+@@ -514,6 +515,12 @@ namespace Ryujinx.Graphics.GAL.Multithreading
+             return _baseRenderer.PrepareHostMapping(address, size);
+         }
+ 
++        public void StopRunLoop()
++        {
++            _running = false;
++            _galWorkAvailable.Set();
++        }
++
+         public void FlushThreadedCommands()
+         {
+             SpinWait wait = new();
+@@ -539,7 +546,7 @@ namespace Ryujinx.Graphics.GAL.Multithreading
+                 _gpuThread.Join();
+             }
+             
+-            if (_backendThread is { IsAlive: true })
++            if (_backendThread is { IsAlive: true } && Thread.CurrentThread != _backendThread)
+             {
+                 _backendThread.Join();
+             }
+diff --git a/src/Ryujinx.Graphics.OpenGL/Window.cs b/src/Ryujinx.Graphics.OpenGL/Window.cs
+index fb3208f..ef1e5cd 100644
+--- a/src/Ryujinx.Graphics.OpenGL/Window.cs
++++ b/src/Ryujinx.Graphics.OpenGL/Window.cs
+@@ -38,6 +38,9 @@ namespace Ryujinx.Graphics.OpenGL
+             _renderer = renderer;
+         }
+ 
++        private long _presentedFrameCount;
++        public long PresentedFrameCount => System.Threading.Interlocked.Read(ref _presentedFrameCount);
++
+         public void Present(ITexture texture, ImageCrop crop, Action swapBuffersCallback)
+         {
+             GL.Disable(EnableCap.FramebufferSrgb);
+@@ -221,6 +224,7 @@ namespace Ryujinx.Graphics.OpenGL
+             GL.BindFramebuffer(FramebufferTarget.Framebuffer, drawFramebuffer);
+ 
+             swapBuffersCallback();
++            System.Threading.Interlocked.Increment(ref _presentedFrameCount);
+ 
+             ((Pipeline)_renderer.Pipeline).RestoreClipControl();
+             ((Pipeline)_renderer.Pipeline).RestoreScissor0Enable();
+diff --git a/src/Ryujinx.Graphics.Vulkan/Window.cs b/src/Ryujinx.Graphics.Vulkan/Window.cs
+index eb8d433..8cb2372 100644
+--- a/src/Ryujinx.Graphics.Vulkan/Window.cs
++++ b/src/Ryujinx.Graphics.Vulkan/Window.cs
+@@ -309,6 +309,9 @@ namespace Ryujinx.Graphics.Vulkan
+             return new Extent2D(width, height);
+         }
+ 
++        private long _presentedFrameCount;
++        public override long PresentedFrameCount => System.Threading.Interlocked.Read(ref _presentedFrameCount);
++
+         public unsafe override void Present(ITexture texture, ImageCrop crop, Action swapBuffersCallback)
+         {
+             _gd.PipelineInternal.AutoFlush.Present();
+@@ -482,7 +485,10 @@ namespace Ryujinx.Graphics.Vulkan
+ 
+             lock (_gd.QueueLock)
+             {
+-                _gd.SwapchainApi.QueuePresent(_gd.Queue, in presentInfo);
++                Result presented = _gd.SwapchainApi.QueuePresent(_gd.Queue, in presentInfo);
++                if ((presented == Result.Success || presented == Result.SuboptimalKhr) &&
++                    (result == Result.Success || result == Result.SuboptimalKhr))
++                    System.Threading.Interlocked.Increment(ref _presentedFrameCount);
+             }
+         }
+ 
+diff --git a/src/Ryujinx.Graphics.Vulkan/WindowBase.cs b/src/Ryujinx.Graphics.Vulkan/WindowBase.cs
+index 34ac63a..43e5921 100644
+--- a/src/Ryujinx.Graphics.Vulkan/WindowBase.cs
++++ b/src/Ryujinx.Graphics.Vulkan/WindowBase.cs
+@@ -9,6 +9,8 @@ namespace Ryujinx.Graphics.Vulkan
+         public bool ScreenCaptureRequested { get; set; }
+ 
+         public abstract void Dispose();
++        public virtual long PresentedFrameCount => 0;
++
+         public abstract void Present(ITexture texture, ImageCrop crop, Action swapBuffersCallback);
+         public abstract void SetSize(int width, int height);
+         public abstract void ChangeVSyncMode(VSyncMode vSyncMode);
+diff --git a/src/Ryujinx.HLE/Switch.cs b/src/Ryujinx.HLE/Switch.cs
+index 90af479..ea3e589 100644
+--- a/src/Ryujinx.HLE/Switch.cs
++++ b/src/Ryujinx.HLE/Switch.cs
+@@ -92,6 +92,10 @@ namespace Ryujinx.HLE
+             Processes         = new ProcessLoader(this);
+             TamperMachine     = new TamperMachine();
+ 
++            // Service startup can query installed system content immediately.
++            // Populate storage indexes before publishing them to service threads;
++            // ProcessResult.Start still performs the device-specific initialization.
++            Configuration.ContentManager.LoadEntries();
+             System.InitializeServices();
+             System.State.SetLanguage(Configuration.SystemLanguage);
+             System.State.SetRegion(Configuration.Region);
+diff --git a/src/Ryujinx.Input/HLE/NpadManager.cs b/src/Ryujinx.Input/HLE/NpadManager.cs
+index fcc527c..7190de0 100644
+--- a/src/Ryujinx.Input/HLE/NpadManager.cs
++++ b/src/Ryujinx.Input/HLE/NpadManager.cs
+@@ -380,6 +380,8 @@ namespace Ryujinx.Input.HLE
+             ReloadConfiguration(inputConfig, playerInputAssignments, enableKeyboard, enableMouse);
+         }
+ 
++        public Func<PlayerIndex, GamepadInput?> ManagedInput { get; set; }
++
+         public void Update(float aspectRatio = 1)
+         {
+             lock (_lock)
+@@ -424,6 +426,11 @@ namespace Ryujinx.Input.HLE
+                         motionState.Item1.Orientation = new float[9];
+                     }
+ 
++                    if (ManagedInput?.Invoke(playerIndex) is GamepadInput managedInput)
++                    {
++                        inputState = managedInput;
++                        inputState.Buttons |= _device.Hid.UpdateStickButtons(inputState.LStick, inputState.RStick);
++                    }
+                     inputState.PlayerId = playerIndex;
+                     motionState.Item1.PlayerId = playerIndex;
+ 
+diff --git a/src/Ryujinx.SDL3.Common/SDL3Driver.cs b/src/Ryujinx.SDL3.Common/SDL3Driver.cs
+index 1808e7c..321cd5a 100644
+--- a/src/Ryujinx.SDL3.Common/SDL3Driver.cs
++++ b/src/Ryujinx.SDL3.Common/SDL3Driver.cs
+@@ -26,6 +26,7 @@ namespace Ryujinx.SDL3.Common
+         }
+ 
+         public static Action<Action> MainThreadDispatcher { get; set; }
++        public static Action<Action> PollEventsDispatcher { get; set; }
+ 
+         private const SDL_InitFlags SdlInitFlags = SDL_InitFlags.SDL_INIT_EVENTS | SDL_InitFlags.SDL_INIT_GAMEPAD | SDL_InitFlags.SDL_INIT_JOYSTICK | SDL_InitFlags.SDL_INIT_AUDIO | SDL_InitFlags.SDL_INIT_VIDEO;
+ 
+@@ -199,7 +200,7 @@ namespace Ryujinx.SDL3.Common
+ 
+             while (_isRunning)
+             {
+-                MainThreadDispatcher?.Invoke(() =>
++                (PollEventsDispatcher ?? MainThreadDispatcher)?.Invoke(() =>
+                 {
+                     SDL_Event evnt = new();
+                     while (SDL_PollEvent(&evnt))
+@@ -230,6 +231,7 @@ namespace Ryujinx.SDL3.Common
+                         _isRunning = false;
+ 
+                         _worker?.Join();
++                        PollEventsDispatcher = null;
+ 
+                         SDL_Quit();
+ 
+diff --git a/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs b/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs
+index ff7e56c..56d4553 100644
+--- a/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs
++++ b/src/Ryujinx/Headless/HeadlessRyujinx.Init.cs
+@@ -32,7 +32,7 @@ namespace Ryujinx.Headless
+             DiscordIntegrationModule.EmulatorStartedAt = Timestamps.Now;
+ 
+             // Delete backup files after updating.
+-            Task.Run(Updater.CleanupUpdate);
++            if (!EmucapStartup.Enabled) Task.Run(Updater.CleanupUpdate);
+ 
+             // Hook unhandled exception and process exit events.
+             AppDomain.CurrentDomain.UnhandledException += (sender, e)
+@@ -43,7 +43,7 @@ namespace Ryujinx.Headless
+             ConfigurationState.Initialize();
+ 
+             // Initialize Discord integration.
+-            DiscordIntegrationModule.Initialize();
++            if (!EmucapStartup.Enabled) DiscordIntegrationModule.Initialize();
+ 
+             // Logging system information.
+             Program.PrintSystemInfo();
+diff --git a/src/Ryujinx/Headless/HeadlessRyujinx.cs b/src/Ryujinx/Headless/HeadlessRyujinx.cs
+index a6ff5da..2fac12b 100644
+--- a/src/Ryujinx/Headless/HeadlessRyujinx.cs
++++ b/src/Ryujinx/Headless/HeadlessRyujinx.cs
+@@ -35,6 +35,8 @@ namespace Ryujinx.Headless
+ {
+     public partial class HeadlessRyujinx
+     {
++        internal static string EmucapContent;
++        internal static string EmucapRenderer;
+         private static VirtualFileSystem _virtualFileSystem;
+         private static ContentManager _contentManager;
+         private static AccountManager _accountManager;
+@@ -55,7 +57,7 @@ namespace Ryujinx.Headless
+             // Make process DPI aware for proper window sizing on high-res screens.
+             ForceDpiAware.Windows();
+ 
+-            Console.Title = $"HeadlessRyujinx Console {Program.Version}";
++            if (!EmucapStartup.Enabled) Console.Title = $"HeadlessRyujinx Console {Program.Version}";
+ 
+             if (OperatingSystem.IsMacOS() || OperatingSystem.IsLinux())
+             {
+@@ -94,6 +96,12 @@ namespace Ryujinx.Headless
+ 
+         public static void ReloadConfig(string customConfigPath = null)
+         {
++            if (EmucapStartup.Enabled)
++            {
++                ConfigurationState.Instance.LoadDefault();
++                return;
++            }
++
+             string localConfigurationPath = Path.Combine(AppDomain.CurrentDomain.BaseDirectory, ReleaseInformation.ConfigName);
+             string appDataConfigurationPath = Path.Combine(AppDataManager.BaseDirPath, ReleaseInformation.ConfigName);
+ 
+@@ -141,6 +149,7 @@ namespace Ryujinx.Headless
+ 
+         static void Load(string[] originalArgs, Options option)
+         {
++            EmucapStartup.Configure(option);
+             Initialize();
+ 
+             bool useLastUsedProfile = false;
+@@ -227,6 +236,11 @@ namespace Ryujinx.Headless
+             }
+ 
+             _inputConfiguration ??= [];
++            if (EmucapStartup.Enabled)
++            {
++                _inputConfiguration.Clear();
++                _inputConfiguration.Add(InputConfigDefaults.CreateDefaultKeyboardConfiguration("0", "emucap", ControllerType.ProController, PlayerIndex.Player1));
++            }
+             _enableKeyboard = option.EnableKeyboard;
+             _enableMouse = option.EnableMouse;
+ 
+@@ -315,6 +329,7 @@ namespace Ryujinx.Headless
+ 
+             void LoadPlayerConfiguration(string inputProfileName, string inputId, PlayerIndex index)
+             {
++                if (EmucapStartup.Enabled) return;
+                 if (index == PlayerIndex.Handheld && _inputConfiguration.Count > 0)
+                 {
+                     Logger.Info?.Print(LogClass.Configuration, "Skipping handheld configuration as there are already other players configured.");
+@@ -377,6 +392,7 @@ namespace Ryujinx.Headless
+             _window.Execute();
+ 
+             _emulationContext.Dispose();
++            _window.DisposeEmucap();
+             _window.Dispose();
+ 
+             if (OperatingSystem.IsWindows())
+@@ -389,6 +405,8 @@ namespace Ryujinx.Headless
+         private static bool LoadApplication(Options options)
+         {
+             string path = options.InputPath;
++            EmucapContent = Path.GetFullPath(Directory.Exists(path) ? Path.Combine(path, "main") : path);
++            EmucapRenderer = options.GraphicsBackend == GraphicsBackend.Vulkan ? "vulkan" : "opengl";
+ 
+             Logger.RestartTime();
+ 
+diff --git a/src/Ryujinx/Headless/Windows/WindowBase.cs b/src/Ryujinx/Headless/Windows/WindowBase.cs
+index 49b2a38..2028030 100644
+--- a/src/Ryujinx/Headless/Windows/WindowBase.cs
++++ b/src/Ryujinx/Headless/Windows/WindowBase.cs
+@@ -78,7 +78,19 @@ namespace Ryujinx.Headless
+         private readonly ManualResetEvent _gpuDoneEvent;
+ 
+         private long _ticks;
+-        private bool _isActive;
++        private volatile bool _isActive;
++        private volatile bool _emucapRendererReady;
++        private volatile EmucapSession _emucap;
++        private Thread _emucapRenderThread;
++        private int _sdlPollQueued;
++        public void DisposeEmucap()
++        {
++            // HLE/CPU disposal has completed; its renderer resource commands have run.
++            if (Device.Gpu.Renderer is ThreadedRenderer threaded) threaded.StopRunLoop();
++            _emucapRenderThread?.Join();
++            _emucap?.Dispose();
++            _emucap = null;
++        }
+         private bool _isStopped;
+         private SDL_WindowID _windowId;
+ 
+@@ -195,7 +207,10 @@ namespace Ryujinx.Headless
+             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_Y_NUMBER, SDL_WINDOWPOS_CENTERED_DISPLAY(DisplayId));
+             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_WIDTH_NUMBER, Width);
+             SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_HEIGHT_NUMBER, Height);
+-            SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, (long)(DefaultFlags | FullscreenFlag | WindowFlags));
++            SDL_WindowFlags creationFlags = DefaultFlags | FullscreenFlag | WindowFlags;
++            if (EmucapStartup.Enabled && Environment.GetEnvironmentVariable("EMUCAP_DISPLAY") == "0")
++                creationFlags |= SDL_WindowFlags.SDL_WINDOW_HIDDEN;
++            SDL_SetNumberProperty(props, SDL_PROP_WINDOW_CREATE_FLAGS_NUMBER, (long)creationFlags);
+ 
+             WindowHandle = SDL_CreateWindowWithProperties(props);
+             SDL_DestroyProperties(props);
+@@ -236,7 +251,8 @@ namespace Ryujinx.Headless
+                         break;
+ 
+                     case SDL_EventType.SDL_EVENT_WINDOW_CLOSE_REQUESTED:
+-                        Exit();
++                        _gpuCancellationTokenSource.Cancel();
++                        _isActive = false;
+                         break;
+                 }
+             }
+@@ -285,6 +301,7 @@ namespace Ryujinx.Headless
+             SetScalingFilter();
+ 
+             _gpuDriverName = GetGpuDriverName();
++            _emucapRendererReady = true;
+ 
+             Device.Gpu.Renderer.RunLoop(() =>
+             {
+@@ -298,6 +315,7 @@ namespace Ryujinx.Headless
+                         return;
+                     }
+ 
++                    _emucap?.CaptureOnRenderer();
+                     _ticks += _chrono.ElapsedTicks;
+ 
+                     _chrono.Restart();
+@@ -363,6 +381,11 @@ namespace Ryujinx.Headless
+         {
+             while (_isActive)
+             {
++                if (EmucapStartup.Enabled && _emucapRendererReady)
++                {
++                    _emucap ??= new EmucapSession(this, HeadlessRyujinx.EmucapRenderer, HeadlessRyujinx.EmucapContent);
++                    _emucap.Pump();
++                }
+                 UpdateFrame();
+ 
+                 SDL_PumpEvents();
+@@ -373,6 +396,7 @@ namespace Ryujinx.Headless
+                 Thread.Sleep(1);
+             }
+ 
++            _emucap?.Stop();
+             _exitEvent.Set();
+         }
+ 
+@@ -413,7 +437,12 @@ namespace Ryujinx.Headless
+             bool hasTouch = false;
+ 
+             // Get screen touch position
+-            if (!_enableMouse)
++            if (_emucap != null)
++            {
++                _emucap.UpdateTouch();
++                hasTouch = true;
++            }
++            else if (!_enableMouse)
+             {
+                 hasTouch = TouchScreenManager.Update(true, (_inputManager.MouseDriver as SDL3MouseDriver).IsButtonPressed(MouseButton.Button1), _aspectRatio.ToFloat());
+             }
+@@ -436,12 +465,25 @@ namespace Ryujinx.Headless
+             _chrono.Restart();
+             _isActive = true;
+ 
++            // Poll on the window owner on every OS. The SDL worker must remain
++            // joinable after the owner loop stops; it never waits for this action.
++            SDL3Driver.PollEventsDispatcher = action =>
++            {
++                if (!_isActive || Interlocked.CompareExchange(ref _sdlPollQueued, 1, 0) != 0) return;
++                QueueMainThreadAction(() =>
++                {
++                    try { if (_isActive) action(); }
++                    finally { Volatile.Write(ref _sdlPollQueued, 0); }
++                });
++            };
++
+             InitializeWindow();
+ 
+             Thread renderLoopThread = new(Render)
+             {
+                 Name = "GUI.RenderLoop",
+             };
++            _emucapRenderThread = renderLoopThread;
+             renderLoopThread.Start();
+ 
+             Thread nvidiaStutterWorkaround = null;
+diff --git a/src/Ryujinx/Program.cs b/src/Ryujinx/Program.cs
+index 1bd68fa..04b3fb2 100644
+--- a/src/Ryujinx/Program.cs
++++ b/src/Ryujinx/Program.cs
+@@ -49,6 +49,8 @@ namespace Ryujinx.Ava
+         [STAThread]
+         public static int Main(string[] args)
+         {
++            if (EmucapStartup.Enter(args)) return 0;
++
+             Version = ReleaseInformation.Version;
+ 
+             if (OperatingSystem.IsWindows())
+@@ -245,7 +247,7 @@ namespace Ryujinx.Ava
+             // Delete backup files after updating.
+             Task.Run(Updater.CleanupUpdate);
+ 
+-            Console.Title = $"{RyujinxApp.FullAppName} Console {Version}";
++            if (!EmucapStartup.Enabled) Console.Title = $"{RyujinxApp.FullAppName} Console {Version}";
+ 
+             // Hook unhandled exception and process exit events.
+             AppDomain.CurrentDomain.UnhandledException += (sender, e)
