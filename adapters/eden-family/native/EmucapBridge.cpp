@@ -179,7 +179,7 @@ bool ValidAttachment(const Json& value) {
 }
 } // namespace
 
-InputState DecodeInput(const Json& params) {
+InputState DecodeInput(const Json& params,uint32_t allowed_buttons) {
     Port(params); InputState result;
     if(params.contains("frames")&&!params["frames"].is_null())
         throw std::invalid_argument("timed controller input is unsupported; replace persistent state explicitly");
@@ -189,7 +189,7 @@ InputState DecodeInput(const Json& params) {
         if(!button.is_string()) throw std::invalid_argument("button must be a string");
         auto name=button.get<std::string>();
         auto found=std::find(Buttons.begin(),Buttons.end(),name);
-        if(found==Buttons.end()) throw std::invalid_argument("unadvertised button");
+        if(found==Buttons.end()||!(allowed_buttons & (1u << size_t(found-Buttons.begin())))) throw std::invalid_argument("unadvertised button");
         result.buttons[size_t(found-Buttons.begin())]=true;
     }
     auto axes=params.value("axes",Json::object());
@@ -202,14 +202,14 @@ InputState DecodeInput(const Json& params) {
     }
     return result;
 }
-std::optional<Touch> DecodeTouch(const Json& params) {
+std::optional<Touch> DecodeTouch(const Json& params,uint32_t x_min,uint32_t x_max,uint32_t y_min,uint32_t y_max) {
     Port(params);
     if(params.contains("frames")&&!params["frames"].is_null())
         throw std::invalid_argument("timed touch is unsupported; hold and release explicitly");
     if(params.contains("release")&&!params["release"].is_boolean()) throw std::invalid_argument("release must be boolean");
     if(params.value("release",false)) return {};
     const auto x=Number(params,"x",TouchWidth), y=Number(params,"y",TouchHeight);
-    if(x<TouchXMin||x>TouchXMax||y<TouchYMin||y>TouchYMax)
+    if(x<x_min||x>x_max||y<y_min||y>y_max)
         throw std::invalid_argument("touch exceeds advertised native HID bounds");
     return Touch{uint32_t(x),uint32_t(y)};
 }
@@ -263,7 +263,9 @@ Json WaitState::Terminal(uint64_t current,const char* status) const {
         {"overshoot",observed>requested?observed-requested:0},{"state","running"}};
 }
 bool Config::Enabled() {return !Env("EMUCAP_PORT").empty();}
-Config Config::FromEnvironment(Json profile,std::string renderer,std::string content,std::string effective_root,std::string adapter_build,std::string native_system) {
+Config Config::FromEnvironment(Json profile,std::string renderer,std::string content,std::string effective_root,std::string adapter_build,std::string native_system,std::string expected_family) {
+    if(expected_family!="eden-family"&&expected_family!="ryujinx-family")
+        throw std::invalid_argument("unknown native bridge family");
     std::ifstream expected_file(std::filesystem::u8path(Env("EMUCAP_BUILD_PROFILE")),std::ios::binary);
     std::string expected_bytes;
     char byte;
@@ -283,11 +285,18 @@ Config Config::FromEnvironment(Json profile,std::string renderer,std::string con
         !std::filesystem::u8path(result.user_root).is_absolute()||
         std::filesystem::weakly_canonical(std::filesystem::u8path(result.user_root))!=std::filesystem::weakly_canonical(std::filesystem::u8path(Env("EMUCAP_USER_ROOT")))||
         result.build_profile.value("schema","")!="emucap-emulator-build/v1"||
-        result.build_profile.value("family","")!="eden-family"||result.build_profile.value("bridge_api",0)!=1||
+        result.build_profile.value("family","")!=expected_family||result.build_profile.value("bridge_api",0)!=1||
         result.system!=native_system||result.adapter_build.empty()||!Has(result.build_profile["systems"],result.system)||!Has(result.build_profile["renderers"],result.renderer))
-        throw std::invalid_argument("managed Eden bridge environment/build mismatch");
+        throw std::invalid_argument("managed native bridge environment/build mismatch");
     if(Env("EMUCAP_RENDERER")!=result.renderer)
         throw std::invalid_argument("selected renderer differs from native renderer");
+    result.family=std::move(expected_family);
+    if(result.family=="ryujinx-family") {
+        if(native_system!="switch") throw std::invalid_argument("Ryujinx requires Switch 1");
+        result.allowed_buttons=(1u << 18)-1;
+        result.touch_x_min=0;result.touch_x_max=TouchWidth-1;
+        result.touch_y_min=0;result.touch_y_max=TouchHeight-1;
+    }
     return result;
 }
 
@@ -312,7 +321,7 @@ struct Bridge::Impl {
         std::lock_guard lock(job->mutex);job->response=std::move(response);
     }
     [[noreturn]] void Retire(const char* reason) {
-        emucap_publish_native_failure("eden-family-native",config.adapter_build.c_str(),
+        emucap_publish_native_failure((config.family+"-native").c_str(),config.adapter_build.c_str(),
             hooks.counter(),"control_cleanup",reason,true,"unknown");
         std::_Exit(70);
     }
@@ -324,22 +333,29 @@ struct Bridge::Impl {
     }
     Json Hello() const {
         Json axes=Json::object();for(auto name:Axes) axes[name]={{"minimum",-32767},{"neutral",0},{"maximum",32767}};
-        Json result={{"protocol_version",1},{"adapter","eden-family-native"},{"system",config.system},
+        Json result={{"protocol_version",1},{"adapter",config.family+"-native"},{"system",config.system},
             {"build",config.adapter_build},{"host_build",config.build_profile},
             {"renderer",config.renderer},{"content",config.content},{"launch_id",config.launch_id},
             {"host_features",{"native_input","native_render_present","single_touch","owned_capture"}},
             {"methods",{"hello","status","get_rom_info","set_input","touch","screenshot","wait_for_running_frames","cancel_operation"}},
-            {"contracts",{{"catalog","emucap-feature-contracts/v3"},{"active_exceptions",{"eden.input-touch.persistent-only"}}}},
-            {"input_buttons",Buttons},
+            {"contracts",{{"catalog","emucap-feature-contracts/v3"},{"active_exceptions",{config.family=="eden-family"?"eden.input-touch.persistent-only":"ryujinx.input-touch.persistent-only"}}}},
+            {"input_buttons",Json::array()},
             {"input_axes",{{"semantics","complete_persistent_controller_state"},{"ports",Json::array({{{"port",0},{"axes",axes}}})}}},
             {"touch_capability",{{"ports",{0}},{"width",TouchWidth},{"height",TouchHeight},{"coordinate_space","touchscreen"},{"contacts",1},
-                {"bounds",{{"x_min",TouchXMin},{"x_max",TouchXMax},{"y_min",TouchYMin},{"y_max",TouchYMax}}}}},
+                {"bounds",{{"x_min",config.touch_x_min},{"x_max",config.touch_x_max},{"y_min",config.touch_y_min},{"y_max",config.touch_y_max}}}}},
             {"progress_capability",{{"domain","native_render_present"},{"max_count",5000},{"max_timeout_ms",250000},{"overshoot",true},{"running_only",true}}},
             {"temporal_cancellation_capability",{{"methods",{"wait_for_running_frames"}},{"control_service_ms",25},{"stop_host_ms",500}}},
             {"control_session_lifecycle",true},{"managed_user_root",config.user_root},
             {"capability_notes",Json::array({"Experimental source bridge; no exact stepping or deterministic execution claim.",
                 "Progress counts nonempty native renderer Composite events, not guest frames, GPU completion or instructions.",
                 "Capture uses the last completed image when paused; no implicit resume."})}};
+        for(size_t i=0;i<Buttons.size();++i)
+            if(config.allowed_buttons & (1u << i)) result["input_buttons"].push_back(Buttons[i]);
+        if(hooks.set_running) {
+            result["methods"].push_back("pause");result["methods"].push_back("resume");
+        }
+        if(config.family=="ryujinx-family") result["capability_notes"][1]=
+            "Progress counts successful native renderer presentations, not guest frames, GPU completion or instructions.";
         if(!Env("EMUCAP_NAME").empty()) result["name"]=Env("EMUCAP_NAME");
         return result;
     }
@@ -355,8 +371,14 @@ struct Bridge::Impl {
             const auto method=job->request["method"].get<std::string>();
             const auto& params=job->request["params"];
             if(method=="_release") { hooks.input({});hooks.touch({});Finish(job,Success(id,{{"released",true}})); }
-            else if(method=="set_input") { auto input=DecodeInput(params);hooks.input(input);Finish(job,Success(id,{{"input_set",true},{"port",0}})); }
-            else if(method=="touch") { auto value=DecodeTouch(params);hooks.touch(value);Finish(job,Success(id,{{"released",!value.has_value()},{"port",0}})); }
+            else if(method=="set_input") { auto input=DecodeInput(params,config.allowed_buttons);hooks.input(input);Finish(job,Success(id,{{"input_set",true},{"port",0}})); }
+            else if(method=="touch") { auto value=DecodeTouch(params,config.touch_x_min,config.touch_x_max,config.touch_y_min,config.touch_y_max);hooks.touch(value);Finish(job,Success(id,{{"released",!value.has_value()},{"port",0}})); }
+            else if((method=="pause"||method=="resume")&&hooks.set_running) {
+                const bool running=method=="resume";
+                if(!hooks.set_running(running)||hooks.running()!=running)
+                    throw std::runtime_error("native execution state change failed");
+                Finish(job,Success(id,{{"state",running?"running":"paused"},{"paused",!running}}));
+            }
             else if(method=="screenshot") {
                 std::unique_lock lock(capture->mutex);
                 if(!hooks.running()) {
@@ -411,7 +433,10 @@ struct Bridge::Impl {
         auto release=Submit({{"id",0},{"method","_release"},{"params",Json::object()}});
         const auto deadline=Clock::now()+500ms;
         while(!stop&&Clock::now()<deadline) {
-            {std::lock_guard lock(release->mutex);if(release->response) return;}
+            {std::lock_guard lock(release->mutex);if(release->response) {
+                if(!release->response->value("ok",false)) Retire("native owner rejected input release before reconnect");
+                return;
+            }}
             std::this_thread::sleep_for(5ms);
         }
         if(!stop) Retire("native owner did not verify input release before reconnect");
@@ -503,9 +528,9 @@ struct Bridge::Impl {
                     wait.emplace(Number(params,"frames",0),hooks.counter(),Number(params,"timeout_ms",30000));
                     wait_key=params.value("_control",Json());wait_id=id;
                     deadline=Clock::now()+std::chrono::milliseconds(wait->timeout_ms);working=Clock::now()+1s;
-                } else if(method=="set_input"||method=="touch"||method=="screenshot") {
+                } else if(method=="set_input"||method=="touch"||method=="screenshot"||((method=="pause"||method=="resume")&&hooks.set_running)) {
                     request["params"]=std::move(params);active=Submit(std::move(request));
-                    if(method!="screenshot") dirty=true;
+                    if(method=="set_input"||method=="touch") dirty=true;
                     deadline=Clock::now()+(method=="screenshot"?5s:500ms);working=Clock::now()+1s;
                 } else if(!WriteJson(socket,Error(id,"unsupported","operation is unavailable"))) break;
             } catch(const std::exception& error) {
@@ -558,12 +583,14 @@ struct Bridge::Impl {
 Bridge::Bridge(Config config,Hooks hooks):impl(std::make_unique<Impl>(std::move(config),std::move(hooks))) {
     impl->thread=std::thread([this]{impl->Run();});
 }
-Bridge::~Bridge() {Stop();}
+Bridge::~Bridge() {try {Stop();} catch(...) {}}
 void Bridge::Pump() {impl->Pump();}
 void Bridge::Stop() {
     if(!impl||impl->stop.exchange(true)) return;
     {std::lock_guard lock(impl->capture->mutex);impl->capture->active=false;}
-    impl->hooks.input({});impl->hooks.touch({});
+    std::exception_ptr cleanup_error;
+    try {impl->hooks.input({});} catch(...) {cleanup_error=std::current_exception();}
+    try {impl->hooks.touch({});} catch(...) {if(!cleanup_error) cleanup_error=std::current_exception();}
     {
     std::lock_guard lock(impl->socket_mutex);
     const auto socket=impl->active_socket.load();
@@ -576,5 +603,6 @@ void Bridge::Stop() {
     }
     }
     if(impl->thread.joinable()) impl->thread.join();
+    if(cleanup_error) std::rethrow_exception(cleanup_error);
 }
 } // namespace EmucapEden

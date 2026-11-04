@@ -15,6 +15,12 @@ int main() {
         try { (void)DecodeInput(bad); } catch (const std::exception&) { failed = true; }
         assert(failed);
     }
+    bool unsupported = false;
+    try { DecodeInput(Json{{"buttons",{"home"}}}, (1u << 18)-1); }
+    catch(const std::invalid_argument&) { unsupported = true; }
+    assert(unsupported);
+    auto full_touch = DecodeTouch(Json{{"x",0},{"y",719}}, 0,1279,0,719);
+    assert(full_touch && full_touch->x == 0 && full_touch->y == 719);
     auto touch = DecodeTouch(Json{{"port",0},{"x",1264},{"y",704},{"release",false}});
     assert(touch && touch->x == 1264 && touch->y == 704);
     touch = DecodeTouch(Json{{"port",0},{"x",15},{"y",15}});

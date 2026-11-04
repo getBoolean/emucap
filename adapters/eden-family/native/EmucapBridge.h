@@ -26,8 +26,9 @@ struct InputState {
     std::array<int,4> axes{};
 };
 struct Touch { uint32_t x{}, y{}; };
-InputState DecodeInput(const Json& params);
-std::optional<Touch> DecodeTouch(const Json& params);
+InputState DecodeInput(const Json& params, uint32_t allowed_buttons = (1u << 20)-1);
+std::optional<Touch> DecodeTouch(const Json& params, uint32_t x_min = TouchXMin, uint32_t x_max = TouchXMax,
+                                 uint32_t y_min = TouchYMin, uint32_t y_max = TouchYMax);
 std::vector<uint8_t> EncodePng(uint32_t width, uint32_t height,
                                const std::vector<uint8_t>& bgra, bool invert_y);
 std::string Base64(const std::vector<uint8_t>& bytes);
@@ -46,6 +47,7 @@ struct CaptureBuffer {
 struct Hooks {
     // These observation callbacks must read native atomics and remain valid until Stop returns.
     std::function<bool()> running;
+    std::function<bool(bool)> set_running;
     std::function<uint64_t()> counter;
     // Effects are called only from Pump/Stop on the SDL owner thread.
     std::function<void(const InputState&)> input;
@@ -57,10 +59,15 @@ struct Config {
     uint16_t port{};
     std::string front_key, launch_id, system, renderer, content, user_root, adapter_build;
     Json build_profile;
+    std::string family = "eden-family";
+    uint32_t allowed_buttons = (1u << 20)-1;
+    uint32_t touch_x_min = TouchXMin, touch_x_max = TouchXMax;
+    uint32_t touch_y_min = TouchYMin, touch_y_max = TouchYMax;
     static bool Enabled();
     static Config FromEnvironment(Json profile, std::string renderer,
                                   std::string content, std::string effective_root,
-                                  std::string adapter_build, std::string native_system);
+                                  std::string adapter_build, std::string native_system,
+                                  std::string expected_family = "eden-family");
 };
 
 class Bridge {
