@@ -82,3 +82,34 @@ fn live_hello_must_match_selected_metadata_and_runtime_selection() {
     hello["renderer"] = json!("opengl");
     assert!(profile.validate_hello(&hello).is_err());
 }
+
+#[test]
+fn ryubing_profile_is_distinct_pinned_and_switch_one_only() {
+    let pin = maintained_source("ryubing").unwrap();
+    assert_eq!(pin.family, EmulatorFamily::RyujinxFamily);
+    assert_eq!(
+        pin.repository,
+        "https://git.ryujinx.app/projects/Ryubing.git"
+    );
+    assert_eq!(pin.reference, "master");
+    assert_eq!(pin.revision, "a61a42681119bf15fe8f3297677ae48bda83e70f");
+    let mut profile = eden();
+    profile.family = EmulatorFamily::RyujinxFamily;
+    profile.fork = pin.fork.into();
+    profile.repository = pin.repository.into();
+    profile.revision = pin.revision.into();
+    profile.systems = vec!["switch".into()];
+    assert!(profile.validate_selection("switch", "vulkan").is_ok());
+    assert_eq!(profile.family.adapter(), "ryujinx-family-native");
+    let mut hello = json!({"protocol_version":1,"adapter":"ryujinx-family-native",
+        "system":"switch","renderer":"vulkan","host_build":profile});
+    assert!(profile.validate_hello(&hello).is_ok());
+    hello["adapter"] = json!("eden-family-native");
+    assert!(profile.validate_hello(&hello).is_err());
+    profile.fork = "custom-ryujinx".into();
+    profile.repository = "https://example.test/custom-ryujinx.git".into();
+    profile.revision = "cd".repeat(20);
+    assert!(profile.validate().is_ok());
+    profile.systems.push("switch2".into());
+    assert!(profile.validate().is_err());
+}

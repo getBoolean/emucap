@@ -10,6 +10,35 @@ fn embedded_contract_sources_validate() {
 }
 
 #[test]
+fn ryujinx_persistent_touch_contract_is_strictly_scoped() {
+    let ad = advertisement_from_hello(&json!({"contracts":advertisement_value(&[
+        "ryujinx.input-touch.persistent-only"
+    ])}));
+    let methods = vec!["status".into(), "touch".into()];
+    let status =
+        validate_advertisement(&ad, Some("ryujinx-family-native"), Some("switch"), &methods);
+    assert_eq!(status.state, "validated", "{:?}", status.errors);
+    assert_eq!(
+        status.constraints["input.touch.modes"],
+        json!(["hold", "release"])
+    );
+    assert_ne!(
+        validate_advertisement(&ad, Some("eden-family-native"), Some("switch"), &methods).state,
+        "validated"
+    );
+    assert_ne!(
+        validate_advertisement(
+            &ad,
+            Some("ryujinx-family-native"),
+            Some("switch2"),
+            &methods
+        )
+        .state,
+        "validated"
+    );
+}
+
+#[test]
 fn running_progress_wait_has_observation_not_exact_step_contract() {
     let feature = catalog()
         .features

@@ -166,3 +166,159 @@ fn native_preflight_binds_explicit_fork_system_renderer_and_host() {
     options.renderer = Some("null".into());
     assert!(resolve(root.path(), "switch2", &options).is_err());
 }
+
+fn ryubing() -> ResolvedEmulator {
+    let mut selected = native();
+    selected.profile.family = EmulatorFamily::RyujinxFamily;
+    selected.profile.fork = "ryubing".into();
+    selected.profile.repository = "https://git.ryujinx.app/projects/Ryubing.git".into();
+    selected.profile.revision = "a61a42681119bf15fe8f3297677ae48bda83e70f".into();
+    selected.profile.systems = vec!["switch".into()];
+    selected.profile.renderers = vec!["vulkan".into(), "opengl".into()];
+    selected.system = "switch".into();
+    selected
+}
+
+#[test]
+fn ryubing_preflight_accepts_maintained_and_explicit_custom_profiles() {
+    let root = tempfile::tempdir().unwrap();
+    let binary = root.path().join("Ryujinx.exe");
+    let sidecar = root.path().join("emucap-emulator-build.json");
+    std::fs::write(&binary, b"synthetic selection fixture").unwrap();
+    let mut profile = ryubing().profile;
+    std::fs::write(&sidecar, serde_json::to_vec(&profile).unwrap()).unwrap();
+    let mut options = EmulatorOptions {
+        fork: Some("ryubing".into()),
+        binary: Some(binary.display().to_string()),
+        ..Default::default()
+    };
+    assert_eq!(
+        resolve(root.path(), "switch", &options)
+            .unwrap()
+            .profile
+            .family,
+        EmulatorFamily::RyujinxFamily
+    );
+    assert!(resolve(root.path(), "switch2", &options).is_err());
+    profile.fork = "custom-ryujinx".into();
+    profile.repository = "https://example.test/custom.git".into();
+    profile.revision = "cd".repeat(20);
+    options.fork = Some(profile.fork.clone());
+    std::fs::write(&sidecar, serde_json::to_vec(&profile).unwrap()).unwrap();
+    assert!(resolve(root.path(), "switch", &options).is_ok());
+    profile.systems.push("switch2".into());
+    std::fs::write(&sidecar, serde_json::to_vec(&profile).unwrap()).unwrap();
+    assert!(resolve(root.path(), "switch2", &options).is_err());
+}
+
+#[test]
+fn ryubing_spec_uses_native_cli_and_exefs_directory_without_config_flag() {
+    let mut selected = ryubing();
+    selected.renderer = "opengl".into();
+    let runtime = RuntimeEnv {
+        launch_id: "test",
+        adapter_failure_path: Path::new("/failure"),
+    };
+    let spec = process_spec(
+        &selected,
+        "/content path/exefs/main",
+        Path::new("/managed root"),
+        Path::new("/log"),
+        Path::new("/receipt"),
+        5555,
+        "private",
+        runtime,
+        false,
+        None,
+    );
+    assert_eq!(
+        spec.args,
+        vec![
+            "--no-gui",
+            "--root-data-dir",
+            "/managed root",
+            "--disable-main-input-config",
+            "--disable-docked-mode",
+            "--graphics-backend",
+            "OpenGl",
+            "/content path/exefs"
+        ]
+    );
+    selected.renderer = "vulkan".into();
+    let spec = process_spec(
+        &selected,
+        "/content path/guest.nro",
+        Path::new("/managed root"),
+        Path::new("/log"),
+        Path::new("/receipt"),
+        5555,
+        "private",
+        runtime,
+        false,
+        None,
+    );
+    assert_eq!(spec.args.last().unwrap(), "/content path/guest.nro");
+    assert!(spec.args.iter().any(|arg| arg == "Vulkan"));
+}
+
+#[test]
+fn ryubing_default_binary_and_explicit_override_are_admitted() {
+    let root = tempfile::tempdir().unwrap();
+    let default = root
+        .path()
+        .join("adapters/ryujinx-family/build/ryubing/bin")
+        .join(format!("Ryujinx{}", std::env::consts::EXE_SUFFIX));
+    std::fs::create_dir_all(default.parent().unwrap()).unwrap();
+    std::fs::write(&default, b"synthetic default binary").unwrap();
+    std::fs::write(
+        default.parent().unwrap().join("emucap-emulator-build.json"),
+        serde_json::to_vec(&ryubing().profile).unwrap(),
+    )
+    .unwrap();
+    let mut options = EmulatorOptions {
+        fork: Some("ryubing".into()),
+        ..Default::default()
+    };
+    // Explicit selection is independent of any machine-local environment override.
+    options.binary = Some(default.display().to_string());
+    assert_eq!(
+        resolve(root.path(), "switch", &options).unwrap().binary,
+        default.canonicalize().unwrap()
+    );
+    if std::env::var_os("EMUCAP_RYUJINX_BIN").is_none() {
+        options.binary = None;
+        assert_eq!(
+            resolve(root.path(), "switch", &options).unwrap().binary,
+            default.canonicalize().unwrap()
+        );
+    }
+}
+
+#[test]
+fn ryubing_config_staging_copies_only_explicit_json_and_preserves_eden_ini() {
+    let root = tempfile::tempdir().unwrap();
+    let generation = root.path().join("generation");
+    std::fs::create_dir(&generation).unwrap();
+    let source = root.path().join("selected-config.json");
+    let bytes = br#"{"preferred_gpu_vendor":"AMD"}"#;
+    std::fs::write(&source, bytes).unwrap();
+    let mut selected = ryubing();
+    selected.config = Some(source.clone());
+    stage_config(&selected, &generation).unwrap();
+    assert_eq!(
+        std::fs::read(generation.join("emucap-config.json")).unwrap(),
+        bytes
+    );
+    assert!(!generation.join("config.ini").exists());
+    assert_eq!(std::fs::read(&source).unwrap(), bytes);
+    let mut eden = native();
+    eden.config = Some(source.clone());
+    stage_config(&eden, &generation).unwrap();
+    assert_eq!(std::fs::read(generation.join("config.ini")).unwrap(), bytes);
+    std::fs::write(source, vec![0; 1024 * 1024 + 1]).unwrap();
+    assert!(stage_config(&selected, &generation).is_err());
+    assert_eq!(
+        std::fs::read(generation.join("emucap-config.json")).unwrap(),
+        bytes
+    );
+}

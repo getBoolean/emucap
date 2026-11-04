@@ -4,6 +4,17 @@
   "contract_version": 3,
   "exceptions": [
     {
+      "id": "ryujinx.input-touch.persistent-only",
+      "feature": "input.touch-wire",
+      "kind": "capability_absent",
+      "targets": ["INPUT.TOUCH.PULSE.1"],
+      "scope": {"adapter": "ryujinx-family-native", "systems": ["switch"]},
+      "activation": {"touch_capability": "persistent_single_contact"},
+      "constraints": {"input.touch.modes": ["hold", "release"], "input.ports.allowed": [0]},
+      "public_behavior": {"invalid": "unsupported"},
+      "verification": ["contract-test:ryujinx-persistent-touch-contract-is-strictly-scoped"]
+    },
+    {
       "id": "azahar.input-touch.persistent-only",
       "feature": "input.touch-wire",
       "kind": "capability_absent",

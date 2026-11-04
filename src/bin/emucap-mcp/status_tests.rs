@@ -916,6 +916,22 @@ fn runtime_paths_exposes_build_and_runtime_locations_without_launcher_aliases() 
     assert!(paths.pointer("/legacy_fallbacks").is_none());
     assert!(paths.pointer("/adapters/mesen2/launch").is_none());
     assert!(paths.pointer("/adapters/pcsx2/launch").is_none());
+    assert_eq!(
+        paths["adapters"]["ryujinx_family"]["forks"],
+        serde_json::json!(["ryubing"])
+    );
+    assert_eq!(
+        paths["adapters"]["ryujinx_family"]["systems"],
+        serde_json::json!(["switch"])
+    );
+    assert_eq!(
+        paths["adapters"]["ryujinx_family"]["binary_env"],
+        "EMUCAP_RYUJINX_BIN"
+    );
+    assert!(paths["adapters"]["ryujinx_family"]["guide"]
+        .as_str()
+        .unwrap()
+        .contains("ryujinx-family"));
 }
 
 #[test]

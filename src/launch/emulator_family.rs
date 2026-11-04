@@ -1,4 +1,4 @@
-//! Managed selection and process specifications for the CTR and Eden-family bridges.
+//! Managed selection and process specifications for source-patched emulator families.
 use super::{LaunchSpec, RuntimeEnv};
 use crate::emulator_profile::{BuildProfile, EmulatorFamily};
 use serde::{Deserialize, Serialize};
@@ -10,7 +10,7 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Default, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EmulatorOptions {
-    /// Maintained fork (azahar, eden, eden-nx2, eglantine), or an explicit custom profile's fork.
+    /// Maintained fork (azahar, eden, eden-nx2, eglantine, ryubing), or an explicit custom profile's fork.
     pub fork: Option<String>,
     /// Patched SDL binary, or the Rust emucap-azahar supervisor for CTR.
     pub binary: Option<String>,
@@ -20,9 +20,9 @@ pub struct EmulatorOptions {
     pub python: Option<String>,
     /// Explicit emucap-emulator-build/v1 JSON sidecar.
     pub profile: Option<String>,
-    /// Optional config file copied into the generation; the user's profile is never imported.
+    /// Optional isolated config: Eden INI or curated Ryujinx JSON, copied into the generation.
     pub config: Option<String>,
-    /// software for CTR; vulkan or opengl for supported Eden-family builds.
+    /// software for CTR; vulkan or opengl for supported Eden-family and Ryujinx-family builds.
     pub renderer: Option<String>,
 }
 
@@ -247,12 +247,31 @@ pub fn resolve(
     } else {
         "eden"
     });
+    let explicit_profile = options
+        .profile
+        .as_deref()
+        .map(Path::new)
+        .map(read_profile)
+        .transpose()?;
+    let ryujinx = fork == "ryubing"
+        || explicit_profile
+            .as_ref()
+            .is_some_and(|profile| profile.family == EmulatorFamily::RyujinxFamily);
     let binary = if azahar {
         selected_path(
             options.binary.as_deref(),
             "EMUCAP_AZAHAR_HOST",
             root.join("target/release")
                 .join(format!("emucap-azahar{}", std::env::consts::EXE_SUFFIX)),
+        )
+    } else if ryujinx {
+        selected_path(
+            options.binary.as_deref(),
+            "EMUCAP_RYUJINX_BIN",
+            root.join("adapters/ryujinx-family/build")
+                .join(fork)
+                .join("bin")
+                .join(format!("Ryujinx{}", std::env::consts::EXE_SUFFIX)),
         )
     } else {
         selected_path(
@@ -292,12 +311,14 @@ pub fn resolve(
     .map_err(|error| invalid(format!("compatible-build profile required: {error}")))?;
     let profile = read_profile(&profile_path)?;
     if profile.fork != fork
-        || profile.family
-            != if azahar {
-                EmulatorFamily::AzaharLibretro
-            } else {
-                EmulatorFamily::EdenFamily
-            }
+        || if azahar {
+            profile.family != EmulatorFamily::AzaharLibretro
+        } else {
+            !matches!(
+                profile.family,
+                EmulatorFamily::EdenFamily | EmulatorFamily::RyujinxFamily
+            )
+        }
     {
         return Err(invalid(
             "selected emulator fork/family does not match build profile",
@@ -396,6 +417,29 @@ pub fn process_spec(
                 .to_string(),
             receipt.display().to_string(),
         ])
+    } else if selected.profile.family == EmulatorFamily::RyujinxFamily {
+        // LoadCart accepts the ExeFS directory; admission/readback still bind its main entry.
+        let content = Path::new(content);
+        let input = if content.file_name().is_some_and(|name| name == "main") {
+            content.parent().unwrap_or(content)
+        } else {
+            content
+        };
+        spec.args([
+            "--no-gui".into(),
+            "--root-data-dir".into(),
+            user_root.display().to_string(),
+            "--disable-main-input-config".into(),
+            "--disable-docked-mode".into(),
+            "--graphics-backend".into(),
+            if selected.renderer == "opengl" {
+                "OpenGl"
+            } else {
+                "Vulkan"
+            }
+            .into(),
+            input.display().to_string(),
+        ])
     } else {
         spec.args([
             "--config".into(),
@@ -412,27 +456,7 @@ pub struct StartedEmulator {
     pub user_root: PathBuf,
 }
 
-pub fn launch(
-    selected: &ResolvedEmulator,
-    content: &str,
-    port: u16,
-    token: &str,
-    runtime: RuntimeEnv<'_>,
-    display: bool,
-    name: Option<&str>,
-) -> io::Result<StartedEmulator> {
-    let generation = super::runtime_generation_dir(port, runtime)?;
-    let user_root = super::emu_generation_dir(
-        if selected.system == "3ds" {
-            "azahar"
-        } else {
-            "eden-family"
-        },
-        port,
-        Some(runtime),
-    )?;
-    let profile = serde_json::to_vec(&selected.profile).map_err(io::Error::other)?;
-    crate::path_safety::atomic_write_file(&user_root.join("emucap-emulator-build.json"), &profile)?;
+fn stage_config(selected: &ResolvedEmulator, user_root: &Path) -> io::Result<()> {
     if let Some(config) = &selected.config {
         let mut input = crate::path_safety::open_regular_file_no_follow(config)?;
         if input.metadata()?.len() > 1024 * 1024 {
@@ -446,8 +470,38 @@ pub fn launch(
         if bytes.len() > 1024 * 1024 {
             return Err(invalid("emulator config grew beyond bound"));
         }
-        crate::path_safety::atomic_write_file(&user_root.join("config.ini"), &bytes)?;
+        let filename = if selected.profile.family == EmulatorFamily::RyujinxFamily {
+            "emucap-config.json"
+        } else {
+            "config.ini"
+        };
+        crate::path_safety::atomic_write_file(&user_root.join(filename), &bytes)?;
     }
+    Ok(())
+}
+
+pub fn launch(
+    selected: &ResolvedEmulator,
+    content: &str,
+    port: u16,
+    token: &str,
+    runtime: RuntimeEnv<'_>,
+    display: bool,
+    name: Option<&str>,
+) -> io::Result<StartedEmulator> {
+    let generation = super::runtime_generation_dir(port, runtime)?;
+    let user_root = super::emu_generation_dir(
+        match selected.profile.family {
+            EmulatorFamily::AzaharLibretro => "azahar",
+            EmulatorFamily::EdenFamily => "eden-family",
+            EmulatorFamily::RyujinxFamily => "ryujinx-family",
+        },
+        port,
+        Some(runtime),
+    )?;
+    let profile = serde_json::to_vec(&selected.profile).map_err(io::Error::other)?;
+    crate::path_safety::atomic_write_file(&user_root.join("emucap-emulator-build.json"), &profile)?;
+    stage_config(selected, &user_root)?;
     let receipt = generation.join("azahar-startup.json");
     let spec = process_spec(
         selected,

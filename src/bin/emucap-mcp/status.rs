@@ -533,6 +533,15 @@ pub(crate) fn runtime_paths(port: Option<u16>) -> serde_json::Value {
                 "binary_env":"EMUCAP_EDEN_BIN",
                 "forks":["eden","eden-nx2","eglantine"]
             },
+            "ryujinx_family": {
+                "build": abs_path_json(&root, &["adapters", "ryujinx-family", if cfg!(windows) { "build.ps1" } else { "build.sh" }]),
+                "guide": abs_path_json(&root, &["adapters", "ryujinx-family", "README.md"]),
+                "binary_env":"EMUCAP_RYUJINX_BIN",
+                "forks":["ryubing"],
+                "family":"ryujinx-family",
+                "adapter":"ryujinx-family-native",
+                "systems":["switch"]
+            },
             "xemu": {
                 "build": abs_path_json(&root, &["adapters", "xemu", "build.sh"]),
                 "bridge_binary": abs_path_json(&root, &["target", "release", if cfg!(windows) { "emucap-xemu-bridge.exe" } else { "emucap-xemu-bridge" }]),
@@ -552,7 +561,9 @@ fn build_supported_systems_value() -> serde_json::Value {
         {
             "system":"switch","aliases":["nx","nintendo-switch"],"adapter":"eden_family",
             "content":["nro","nso","loose ExeFS main"],"qualification":"experimental",
-            "notes":"Select an explicit compatible Eden-family build/profile. Source-patched SDL bridge required; stock keyboard replay is not emucap control."
+            "families":["eden-family","ryujinx-family"],
+            "emulator_forks":["eden","eden-nx2","eglantine","ryubing"],
+            "notes":"Defaults to Eden. Select emulator.fork=ryubing for the maintained Ryujinx-family build, or provide an explicit custom fork/profile. Source-patched native bridge required; live status determines controls."
         },
         {
             "system":"switch2","aliases":["nx2","switch-2","nintendo-switch-2"],"adapter":"eden_family",

@@ -21,7 +21,9 @@ pub(super) fn precondition(
         Err(error) => {
             serde_json::json!({"available":false,"kind":"compatible-emulator-build-required",
             "error":error.to_string(),"system":system,
-            "guide":if system=="3ds" {"adapters/azahar/README.md"} else {"adapters/eden-family/README.md"}})
+            "guide":if system=="3ds" {"adapters/azahar/README.md"}
+                else if options.is_some_and(|options| options.fork.as_deref() == Some("ryubing")) {"adapters/ryujinx-family/README.md"}
+                else {"adapters/eden-family/README.md"}})
         }
     }
 }
@@ -82,6 +84,41 @@ pub(super) fn runtime_identity_error(
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn ryubing_native_readiness_requires_its_own_adapter_and_managed_root() {
+        let root = tempfile::tempdir().unwrap();
+        let pin = emucap::emulator_profile::maintained_source("ryubing").unwrap();
+        let profile = serde_json::from_value(serde_json::json!({
+            "schema":"emucap-emulator-build/v1", "family":"ryujinx-family",
+            "fork":pin.fork,"repository":pin.repository,"revision":pin.revision,
+            "patch_sha256":"ab".repeat(32),"bridge_api":1,"systems":["switch"],
+            "renderers":["vulkan"],"cpu_features":[],"target":"x86_64-windows"
+        }))
+        .unwrap();
+        let selected = ResolvedEmulator {
+            binary: root.path().join("Ryujinx.exe"),
+            core: None,
+            python: None,
+            worker: None,
+            profile_path: root.path().join("profile.json"),
+            config: None,
+            system: "switch".into(),
+            renderer: "vulkan".into(),
+            profile,
+        };
+        let hello = serde_json::json!({"adapter":"ryujinx-family-native","system":"switch",
+            "host_build":selected.profile});
+        let mut capabilities = emucap::live::link::Capabilities::empty();
+        capabilities.protocol_version = 1;
+        capabilities.identity = emucap::live::link::EmulatorIdentity::from_hello(&hello);
+        let expected = root.path().display().to_string();
+        let status = serde_json::json!({"renderer":"vulkan","managed_user_root":expected});
+        assert!(runtime_identity_error(&selected, &status, &capabilities, &expected).is_ok());
+        assert!(runtime_identity_error(&selected, &status, &capabilities, "/other-root").is_err());
+        capabilities.identity.adapter = Some("eden-family-native".into());
+        assert!(runtime_identity_error(&selected, &status, &capabilities, &expected).is_err());
+    }
 
     #[test]
     fn native_readiness_rejects_root_renderer_and_compiled_profile_mismatch() {

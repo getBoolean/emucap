@@ -11,6 +11,7 @@ pub const BRIDGE_API_VERSION: u32 = 1;
 pub enum EmulatorFamily {
     AzaharLibretro,
     EdenFamily,
+    RyujinxFamily,
 }
 
 impl EmulatorFamily {
@@ -18,6 +19,7 @@ impl EmulatorFamily {
         match self {
             Self::AzaharLibretro => "azahar-libretro",
             Self::EdenFamily => "eden-family-native",
+            Self::RyujinxFamily => "ryujinx-family-native",
         }
     }
 }
@@ -49,6 +51,14 @@ pub struct SourcePin {
 }
 
 pub const MAINTAINED_SOURCES: &[SourcePin] = &[
+    SourcePin {
+        family: EmulatorFamily::RyujinxFamily,
+        fork: "ryubing",
+        repository: "https://git.ryujinx.app/projects/Ryubing.git",
+        reference: "master",
+        revision: "a61a42681119bf15fe8f3297677ae48bda83e70f",
+        systems: &["switch"],
+    },
     SourcePin {
         family: EmulatorFamily::AzaharLibretro,
         fork: "azahar",
@@ -122,6 +132,7 @@ impl BuildProfile {
         let (systems, renderers): (&[&str], &[&str]) = match self.family {
             EmulatorFamily::AzaharLibretro => (&["3ds"], &["software"]),
             EmulatorFamily::EdenFamily => (&["switch", "switch2"], &["vulkan", "opengl"]),
+            EmulatorFamily::RyujinxFamily => (&["switch"], &["vulkan", "opengl"]),
         };
         if self.systems.is_empty()
             || self.renderers.is_empty()
