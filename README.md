@@ -4,6 +4,8 @@
 
 [한국어](README.ko.md) · [Releases](https://github.com/mcpads/emucap/releases) · [Agent guide](AGENT_GUIDE.md)
 
+[Credits and AI usage](CREDITS.md) · [Third-party notices](NOTICE)
+
 emucap connects MCP-compatible agents such as Claude Code and Codex to retro-game
 emulators. Ask your agent to play through a scene, reproduce a bug, or investigate
 what the game is doing. It can inspect the screen, press buttons, advance frames,
