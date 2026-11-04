@@ -19,6 +19,9 @@ fn observed_progress_requires_its_typed_capability_pair() {
 
 #[test]
 fn host_calls_and_exactness_cannot_masquerade_as_observed_presents() {
+    let mut renderer = capability();
+    renderer["domain"] = json!("native_render_present");
+    assert!(ProgressCapability::from_hello(&renderer).is_ok());
     for (key, value) in [
         ("domain", json!("retro_run_calls")),
         ("domain", json!("instructions")),

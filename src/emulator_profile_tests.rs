@@ -23,6 +23,16 @@ fn experimental_fork_pin_uses_its_real_branch() {
     assert_eq!(pin.reference, "eden-nx2");
     assert_eq!(pin.revision, "50fa86bbbc403ad565eb44fcc281f16f77c69e15");
     assert_eq!(maintained_source("eden").unwrap().systems, &["switch"]);
+    let eglantine = maintained_source("eglantine").unwrap();
+    assert_eq!(
+        eglantine.repository,
+        "https://github.com/Djihads80/Eglantine.git"
+    );
+    assert_eq!(eglantine.reference, "nx2");
+    assert_eq!(
+        eglantine.revision,
+        "c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4"
+    );
     assert!(maintained_source("unknown-fork").is_none());
 }
 

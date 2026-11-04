@@ -76,9 +76,9 @@ pub const MAINTAINED_SOURCES: &[SourcePin] = &[
     SourcePin {
         family: EmulatorFamily::EdenFamily,
         fork: "eglantine",
-        repository: "https://github.com/sylvieistaken/selevet-eglantine.git",
-        reference: "main",
-        revision: "c3aa97d952b768e8798872d74c21094a340041ff",
+        repository: "https://github.com/Djihads80/Eglantine.git",
+        reference: "nx2",
+        revision: "c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4",
         systems: &["switch", "switch2"],
     },
 ];

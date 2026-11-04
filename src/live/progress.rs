@@ -20,7 +20,7 @@ impl ProgressCapability {
         let capability: Self = serde_json::from_value(value.clone()).map_err(|e| e.to_string())?;
         if !matches!(
             capability.domain.as_str(),
-            "native_guest_present" | "libretro_present"
+            "native_guest_present" | "native_render_present" | "libretro_present"
         ) || capability.max_count == 0
             || capability.max_count > super::temporal::MAX_SYNC_ADVANCE_COUNT
             || capability.max_timeout_ms == 0
