@@ -94,14 +94,14 @@ impl WorkerProcess {
             .stdin(Stdio::piped())
             .stdout(Stdio::piped())
             .stderr(Stdio::inherit());
-        // The private worker receives no public transport credential.
         command
             .env_remove("EMUCAP_SESSION_TOKEN")
             .env_remove("EMUCAP_NATIVE_DEBUG_TOKEN");
         #[cfg(windows)]
         {
             use std::os::windows::process::CommandExt;
-            command.creation_flags(0x08000000); // CREATE_NO_WINDOW
+            use windows_sys::Win32::System::Threading::CREATE_NO_WINDOW;
+            command.creation_flags(CREATE_NO_WINDOW);
         }
         #[cfg(target_os = "linux")]
         {
@@ -362,6 +362,8 @@ impl AzaharHost {
             .arg(&content)
             .arg("--directory")
             .arg(config.directory)
+            .arg("--profile")
+            .arg(config.profile)
             .arg("--supervisor-pid")
             .arg(std::process::id().to_string());
         if let Some(identity) = capture_process(std::process::id()).start_identity {
@@ -388,6 +390,16 @@ impl AzaharHost {
         {
             return Err(invalid(
                 "libretro worker hello does not match managed software backend",
+            ));
+        }
+        profile.validate_hello(&worker_hello).map_err(invalid)?;
+        let effective = worker_hello
+            .get("effective_core_user_root")
+            .and_then(Value::as_str)
+            .ok_or_else(|| invalid("native effective core user root was not reported"))?;
+        if Path::new(effective).canonicalize()? != directory.join("Azahar") {
+            return Err(invalid(
+                "native core user root is outside the managed Azahar directory",
             ));
         }
         Ok(Self {
@@ -419,9 +431,12 @@ impl AzaharHost {
         let axes = ["stick_x", "stick_y", "cstick_x", "cstick_y"]
             .into_iter()
             .map(|name| {
+                let vertical = name.ends_with("_y");
                 (
                     name.to_string(),
-                    json!({"minimum":-32767,"neutral":0,"maximum":32767}),
+                    json!({"minimum":-32767,"neutral":0,"maximum":32767,
+                        "negative_direction":if vertical {"up"} else {"left"},
+                        "positive_direction":if vertical {"down"} else {"right"}}),
                 )
             })
             .collect::<serde_json::Map<_, _>>();
@@ -431,15 +446,84 @@ impl AzaharHost {
             "launch_id":self.launch_id,"content":self.content,"control_session_lifecycle":true,
             "managed_user_root":self.directory,
             "effective_core_user_root":self.worker_hello.get("effective_core_user_root"),
-            "methods":["hello","status","get_rom_info","set_input","touch","screenshot"],
+            "methods":["hello","status","get_rom_info","set_input","touch","screenshot","wait_for_running_frames","cancel_operation"],
             "memory_types":[], "host_features":["supervised_libretro_worker"],
             "contracts":crate::contracts::advertisement_value(&["azahar.input-touch.persistent-only"]),
             "input_buttons":{"port":0,"buttons":["b","y","select","start","up","down","left","right","a","x","l","r","zl","zr"]},
             "input_axes":{"semantics":"complete_persistent_controller_state","ports":[{"port":0,"axes":axes}]},
             "touch_capability":{"ports":[0],"width":320,"height":240,"coordinate_space":"touchscreen","contacts":1},
-            "capability_notes":{"execution":"libretro presentation boundaries and guest halt are not yet qualified; exact step/tap unavailable","touch":"persistent single touch only"},
+            "progress_capability":{"domain":"libretro_present","max_count":5000,"max_timeout_ms":250000,"overshoot":true,"running_only":true},
+            "temporal_cancellation_capability":{"methods":["wait_for_running_frames"],"control_service_ms":25,"stop_host_ms":8000},
+            "capability_notes":{"execution":"continuously running software core; waits observe accepted software video callbacks; exact step/tap unavailable","touch":"persistent single touch only"},
             "geometry":self.worker_hello.get("geometry"),
-            "freeze_policy":{"kind":"unqualified_libretro_boundary","exact":false}
+            "freeze_policy":{"kind":"running_only","exact":false}
+        })
+    }
+
+    fn wait_progress(
+        &mut self,
+        request: &Request,
+        cancellation: &RequestCancellation,
+    ) -> io::Result<Response> {
+        let frames = request.params.get("frames").and_then(Value::as_u64);
+        let timeout = request.params.get("timeout_ms").and_then(Value::as_u64);
+        let (Some(frames @ 1..=5000), Some(timeout @ 1..=250000)) = (frames, timeout) else {
+            return Ok(Response {
+                id: request.id,
+                ok: false,
+                result: None,
+                error: Some(ProtocolError {
+                    kind: "bad_params".into(),
+                    message: "frames must be 1..5000 and timeout_ms 1..250000".into(),
+                }),
+            });
+        };
+        let started = Instant::now();
+        // A poll observes a single-owner native loop. Cancellation never abandons an
+        // outstanding ABI call: an unresponsive native owner is killed and retired.
+        let present = |worker: &mut WorkerProcess| -> io::Result<u64> {
+            let response = worker.exchange(
+                &Request::new(request.id, "status", json!({})),
+                Duration::from_secs(2),
+                &RequestCancellation::default(),
+            )?;
+            response
+                .result
+                .and_then(|value| value.get("software_presentations").and_then(Value::as_u64))
+                .ok_or_else(|| invalid("worker did not report a software presentation counter"))
+        };
+        let start = present(&mut self.worker)?;
+        let mut end = start;
+        let status = loop {
+            if cancellation.is_cancelled() {
+                break "interrupted";
+            }
+            if end
+                .checked_sub(start)
+                .ok_or_else(|| invalid("presentation counter went backwards"))?
+                >= frames
+            {
+                break "completed";
+            }
+            if started.elapsed() >= Duration::from_millis(timeout) {
+                break "timed_out";
+            }
+            std::thread::sleep(
+                POLL.min(Duration::from_millis(timeout).saturating_sub(started.elapsed())),
+            );
+            end = present(&mut self.worker)?;
+        };
+        let observed = end
+            .checked_sub(start)
+            .ok_or_else(|| invalid("presentation counter went backwards"))?;
+        Ok(Response {
+            id: request.id,
+            ok: true,
+            error: None,
+            result: Some(
+                json!({"status":status,"domain":"libretro_present","requested":frames,
+                "start":start,"end":end,"observed":observed,"overshoot":observed.saturating_sub(frames),"state":"running"}),
+            ),
         })
     }
 
@@ -454,6 +538,7 @@ impl AzaharHost {
         let result = match request.method.as_str() {
             "hello" => self.hello(),
             "get_rom_info" => json!({"path":self.content,"rom_sha1":self.rom_sha1,"system":"3ds"}),
+            "wait_for_running_frames" => return self.wait_progress(&request, cancellation),
             "status" => {
                 let response = self
                     .worker

@@ -1,0 +1,8 @@
+{
+  "fork": "eglantine",
+  "repository": "https://github.com/Djihads80/Eglantine.git",
+  "reference": "nx2",
+  "revision": "c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4",
+  "systems": ["switch", "switch2"],
+  "renderers": ["vulkan", "opengl"]
+}

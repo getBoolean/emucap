@@ -5,6 +5,7 @@ import subprocess
 import sys
 import tempfile
 import unittest
+import time
 
 from tests.build_fixture import build_fixture
 
@@ -44,7 +45,9 @@ class NativeAbiTests(unittest.TestCase):
         self.assertEqual(replies[0]['result']['protocol_version'], 1)
         self.assertIn('png_base64', replies[2]['result'])
         self.assertIn('native diagnostic', process.stderr)
-        self.assertEqual(stages, ['init', 'load', 'run', 'unload', 'deinit'])
+        self.assertEqual(stages[:2], ['init', 'load'])
+        self.assertGreaterEqual(stages.count('run'), 1)
+        self.assertEqual(stages[-2:], ['unload', 'deinit'])
 
     def test_rejected_load_deinitializes_without_unload(self):
         process, stages = self.run_worker('reject_load')
@@ -57,6 +60,16 @@ class NativeAbiTests(unittest.TestCase):
                 process, stages = self.run_worker(mode)
                 self.assertNotEqual(process.returncode, 0)
                 self.assertEqual(stages, [])
+
+    def test_compiled_attestation_and_storage_readback_are_required(self):
+        process, stages = self.run_worker('bad_profile')
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn('compiled core build profile', process.stderr)
+        self.assertEqual(stages, [])
+        process, stages = self.run_worker('bad_root')
+        self.assertNotEqual(process.returncode, 0)
+        self.assertIn('effective core user root', process.stderr)
+        self.assertEqual(stages[-2:], ['unload', 'deinit'])
 
     def test_shutdown_latches_terminal_failure(self):
         process, stages = self.run_worker('shutdown')
@@ -102,6 +115,38 @@ class NativeAbiTests(unittest.TestCase):
                                  env=dict(os.environ, EMUCAP_FAKE_LOG=str(log)))
         self.assertEqual(process.returncode, 0, process.stderr)
         self.assertEqual(log.read_text().splitlines(), ['init', 'load', 'unload', 'deinit'])
+
+    def test_native_software_callback_progresses_without_explicit_frame_requests(self):
+        process = subprocess.Popen([sys.executable, '-I', '-u', str(pathlib.Path(__file__).with_name('bridge.py')),
+                                    '--core', str(self.library), '--rom', str(self.rom),
+                                    '--directory', str(self.root / 'data')],
+                                   stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                                   text=True, env=dict(os.environ, EMUCAP_FAKE_MODE=''))
+        def request(identity, method):
+            process.stdin.write(json.dumps({'v': 1, 'id': identity, 'method': method, 'params': {}}) + '\n')
+            process.stdin.flush()
+            value = json.loads(process.stdout.readline())
+            self.assertTrue(value['ok'], value)
+            return value['result']
+        try:
+            hello = request(1, 'hello')
+            self.assertEqual(hello['host_build']['revision'], '9c38437daad90a2f05f55a047d04d4073a476456')
+            before = request(2, 'status')['software_presentations']
+            time.sleep(0.1)
+            status = request(3, 'status')
+            self.assertGreater(status['software_presentations'], before)
+            self.assertEqual(status['state'], 'running')
+            self.assertFalse(status['paused'])
+            self.assertIn('png_base64', request(4, 'screenshot'))
+            process.stdin.close()
+            process.wait(timeout=5)
+            self.assertEqual(process.returncode, 0, process.stderr.read())
+        finally:
+            if process.poll() is None:
+                process.kill()
+                process.wait(timeout=5)
+            process.stdout.close()
+            process.stderr.close()
 
 
 if __name__ == '__main__':

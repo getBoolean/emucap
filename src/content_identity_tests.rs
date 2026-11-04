@@ -88,6 +88,28 @@ fn exefs_rejects_symlinked_romfs_members() {
 }
 
 #[test]
+fn exefs_rejects_empty_romfs_topology_instead_of_silently_dropping_it() {
+    for nested in [false, true] {
+        let root = tempfile::tempdir().unwrap();
+        let exefs = root.path().join("exefs");
+        let romfs = root.path().join("romfs");
+        std::fs::create_dir(&exefs).unwrap();
+        std::fs::create_dir(&romfs).unwrap();
+        let entry = exefs.join("main");
+        std::fs::write(&entry, b"NSO0-homebrew").unwrap();
+        std::fs::write(exefs.join("main.npdm"), b"metadata").unwrap();
+        if nested {
+            std::fs::write(romfs.join("visible.txt"), b"keep").unwrap();
+            std::fs::create_dir(romfs.join("empty")).unwrap();
+        }
+        let error =
+            identify_composite_content_for_adapter(&entry, Some("eden_family")).unwrap_err();
+        assert!(error.to_string().contains("empty RomFS directories"));
+        assert!(inspect_indirect_media(&entry, "eden_family", None).is_err());
+    }
+}
+
+#[test]
 fn content_path_binding_uses_the_existing_filesystem_referent() {
     let directory = tempfile::tempdir().unwrap();
     let content = directory.path().join("game.rom");

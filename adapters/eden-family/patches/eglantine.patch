@@ -1,0 +1,312 @@
+diff --git a/src/common/fs/path_util.cpp b/src/common/fs/path_util.cpp
+index f77da2e..6ed7f67 100644
+--- a/src/common/fs/path_util.cpp
++++ b/src/common/fs/path_util.cpp
+@@ -5,6 +5,9 @@
+ // SPDX-License-Identifier: GPL-2.0-or-later
+ 
+ #include <algorithm>
++#include <cstdlib>
++#include <optional>
++#include <stdexcept>
+ #include <cctype>
+ #include <iostream>
+ #include <sstream>
+@@ -60,6 +63,15 @@ namespace Common::FS {
+ 
+ namespace fs = std::filesystem;
+ 
++static std::optional<fs::path> EmucapManagedRoot() {
++#ifdef _WIN32
++    if (const wchar_t* value = _wgetenv(L"EMUCAP_USER_ROOT")) return fs::path(value);
++#else
++    if (const char* value = std::getenv("EMUCAP_USER_ROOT")) return fs::u8path(value);
++#endif
++    return std::nullopt;
++}
++
+ /**
+  * The PathManagerImpl is a singleton allowing to manage the mapping of
+  * EdenPath enums to real filesystem paths.
+@@ -96,6 +108,13 @@ public:
+     }
+ 
+     void SetEdenPathImpl(EdenPath eden_path, const fs::path& new_path) {
++        if (const auto root_value = EmucapManagedRoot()) {
++            const auto root = fs::weakly_canonical(*root_value);
++            const auto candidate = fs::weakly_canonical(new_path);
++            if (!candidate.is_absolute() || std::mismatch(root.begin(), root.end(), candidate.begin(), candidate.end()).first != root.end()) {
++                throw std::runtime_error("configuration redirects an emucap path outside its managed root");
++            }
++        }
+         eden_paths.insert_or_assign(eden_path, new_path);
+     }
+ 
+@@ -111,6 +130,18 @@ public:
+     void Reinitialize(fs::path eden_path = {}) {
+         fs::path eden_path_cache;
+         fs::path eden_path_config;
++        const auto managed_root = EmucapManagedRoot();
++        if (managed_root) {
++            eden_path = *managed_root;
++            if (!eden_path.is_absolute()) throw std::runtime_error("emucap user root must be absolute");
++            std::error_code error;
++            fs::create_directories(eden_path, error);
++            if (error || !fs::is_directory(eden_path)) throw std::runtime_error("emucap user root unavailable");
++            eden_path = fs::canonical(eden_path);
++            eden_path_cache = eden_path / CACHE_DIR;
++            eden_path_config = eden_path / CONFIG_DIR;
++        } else {
++
+ #ifdef _WIN32
+         // User directory takes priority over global %AppData% directory
+         eden_path = GetExeDirectory() / PORTABLE_DIR;
+@@ -150,6 +181,7 @@ public:
+         LEGACY_PATH(Suyu, SUYU)
+ #undef LEGACY_PATH
+ #endif
++        }
+         // data
+         GenerateEdenPath(EdenPath::EdenDir, eden_path);
+         GenerateEdenPath(EdenPath::AmiiboDir, eden_path / AMIIBO_DIR);
+@@ -181,6 +213,18 @@ public:
+         // This is incredibly stupid and violates a million XDG standards, but whatever
+         GenerateLegacyPath(EmuPath::RyujinxDir, GetDataDirectory("XDG_CONFIG_HOME") / RYUJINX_DIR);
+ #endif
++        if (managed_root) {
++            for (auto kind : {EmuPath::CitronDir, EmuPath::CitronConfigDir, EmuPath::CitronCacheDir,
++                              EmuPath::SudachiDir, EmuPath::SudachiConfigDir, EmuPath::SudachiCacheDir,
++                              EmuPath::YuzuDir, EmuPath::YuzuConfigDir, EmuPath::YuzuCacheDir,
++                              EmuPath::SuyuDir, EmuPath::SuyuConfigDir, EmuPath::SuyuCacheDir,
++                              EmuPath::RyujinxDir}) {
++                GenerateLegacyPath(kind, eden_path / "legacy" / std::to_string(static_cast<int>(kind)));
++            }
++            for (auto& [kind, path] : legacy_paths) {
++                path = eden_path / "legacy" / std::to_string(static_cast<int>(kind));
++            }
++        }
+ 
+     }
+ 
+diff --git a/src/video_core/renderer_base.h b/src/video_core/renderer_base.h
+index 46f8276..5308904 100644
+--- a/src/video_core/renderer_base.h
++++ b/src/video_core/renderer_base.h
+@@ -58,6 +58,8 @@ public:
+         return m_current_fps;
+     }
+ 
++    [[nodiscard]] u64 EmucapPresentCount() const { return emucap_present_count.load(); }
++
+     [[nodiscard]] int GetCurrentFrame() const {
+         return m_current_frame;
+     }
+@@ -105,6 +107,7 @@ protected:
+     int m_current_frame = 0;  ///< Current frame, should be set by the renderer
+ 
+     RendererSettings renderer_settings;
++    std::atomic<u64> emucap_present_count{0};
+ 
+ private:
+     /// Updates the framebuffer layout of the contained render window handle.
+diff --git a/src/video_core/renderer_opengl/renderer_opengl.cpp b/src/video_core/renderer_opengl/renderer_opengl.cpp
+index f9ec32e..5abc377 100644
+--- a/src/video_core/renderer_opengl/renderer_opengl.cpp
++++ b/src/video_core/renderer_opengl/renderer_opengl.cpp
+@@ -146,6 +146,7 @@ void RendererOpenGL::Composite(std::span<const Tegra::FramebufferConfig> framebu
+     blit_screen->DrawScreen(framebuffers, emu_window.GetFramebufferLayout(), false);
+ 
+     ++m_current_frame;
++    emucap_present_count.fetch_add(1);
+ 
+     gpu.RendererFrameEndNotify();
+     rasterizer.TickFrame();
+diff --git a/src/video_core/renderer_vulkan/renderer_vulkan.cpp b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+index fc0eea8..ec863cb 100644
+--- a/src/video_core/renderer_vulkan/renderer_vulkan.cpp
++++ b/src/video_core/renderer_vulkan/renderer_vulkan.cpp
+@@ -214,11 +214,12 @@ void RendererVulkan::Composite(std::span<const Tegra::FramebufferConfig> framebu
+ 
+     RenderAppletCaptureLayer(framebuffers);
+ 
++    RenderScreenshot(framebuffers);
++    if (!framebuffers.empty()) emucap_present_count.fetch_add(1);
++
+     if (!render_window.IsShown()) {
+         return;
+     }
+-
+-    RenderScreenshot(framebuffers);
+     Frame* frame = present_manager.GetRenderFrame();
+ 
+     scheduler.RequestOutsideRenderPassOperationContext();
+diff --git a/src/yuzu_cmd/CMakeLists.txt b/src/yuzu_cmd/CMakeLists.txt
+index b44cc58..88148a4 100644
+--- a/src/yuzu_cmd/CMakeLists.txt
++++ b/src/yuzu_cmd/CMakeLists.txt
+@@ -81,3 +81,13 @@ if (NOT MSVC)
+         $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-unused-parameter>
+         $<$<COMPILE_LANGUAGE:C,CXX>:-Wno-missing-field-initializers>)
+ endif()
++
++# emucap source bridge: generated build identity is private to this build directory.
++target_sources(yuzu-cmd PRIVATE
++    emucap/EmucapBridge.cpp
++    emucap/emucap_native_failure.cpp)
++target_include_directories(yuzu-cmd PRIVATE "${CMAKE_CURRENT_SOURCE_DIR}/emucap")
++target_link_libraries(yuzu-cmd PRIVATE nlohmann_json::nlohmann_json)
++if(WIN32)
++    target_link_libraries(yuzu-cmd PRIVATE ws2_32)
++endif()
+diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp b/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
+index 93bbbfb..d62f30a 100644
+--- a/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
++++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.cpp
+@@ -9,6 +9,8 @@
+ #include <cstdio>
+ #include <chrono>
+ #include <array>
++#include <cstdlib>
++#include <string_view>
+ #include <SDL3/SDL.h>
+ #include <SDL3/SDL_timer.h>
+ #ifdef __EMSCRIPTEN__
+@@ -164,6 +166,14 @@ void EmuWindow_SDL3::ApplyPendingTitle() {
+     }
+ }
+ 
++void EmuWindow_SDL3::SetEmucapDisplay() {
++    const char* display = std::getenv("EMUCAP_DISPLAY");
++    if (display && std::string_view(display) == "0") {
++        SDL_HideWindow(render_window);
++        is_shown = false;
++    }
++}
++
+ bool EmuWindow_SDL3::IsShown() const {
+     return is_shown;
+ }
+diff --git a/src/yuzu_cmd/emu_window/emu_window_sdl3.h b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
+index a76a2bf..f1c427d 100644
+--- a/src/yuzu_cmd/emu_window/emu_window_sdl3.h
++++ b/src/yuzu_cmd/emu_window/emu_window_sdl3.h
+@@ -48,6 +48,7 @@ public:
+ 
+     /// Returns if window is shown (not minimized)
+     bool IsShown() const override;
++    void SetEmucapDisplay();
+ 
+     /// Wait for the next event on the main thread.
+     void OnEvent(SDL_Event& event);
+diff --git a/src/yuzu_cmd/yuzu.cpp b/src/yuzu_cmd/yuzu.cpp
+index 6e02281..c9f8eef 100644
+--- a/src/yuzu_cmd/yuzu.cpp
++++ b/src/yuzu_cmd/yuzu.cpp
+@@ -15,6 +15,7 @@
+ #include <csignal>
+ #include <cstring>
+ #include <filesystem>
++#include <bit>
+ #include <iostream>
+ #include <memory>
+ #include <mutex>
+@@ -25,6 +26,11 @@
+ #ifdef __EMSCRIPTEN__
+ #include <emscripten.h>
+ #endif
++#ifdef _WIN32
++#include <windows.h>
++extern "C" int WINAPI WinMain(HINSTANCE, HINSTANCE, LPSTR, int);
++extern "C" int WINAPI wWinMain(HINSTANCE, HINSTANCE, PWSTR, int);
++#endif
+ #define SDL_MAIN_USE_CALLBACKS 1
+ #include <SDL3/SDL_main.h>
+ 
+@@ -58,6 +64,7 @@
+ #endif
+ #include "yuzu_cmd/emu_window/emu_window_sdl3_null.h"
+ #include "yuzu_cmd/emu_window/emu_window_sdl3_vk.h"
++#include "EmucapEdenIntegration.h"
+ #include "yuzu_cmd/nx2_sampler.h"
+ 
+ #if defined(__unix__) || defined(__APPLE__)
+@@ -124,7 +131,7 @@ static LONG WINAPI WriteCrashDump(EXCEPTION_POINTERS* exception) {
+     using MiniDumpWriteDumpFn = BOOL(WINAPI*)(HANDLE, DWORD, HANDLE, int, const ExceptionInformation*,
+                                               const void*, const void*);
+     const HMODULE dbghelp = LoadLibraryA("dbghelp.dll");
+-    const auto write = dbghelp ? reinterpret_cast<MiniDumpWriteDumpFn>(
++    const auto write = dbghelp ? std::bit_cast<MiniDumpWriteDumpFn>(
+                                      GetProcAddress(dbghelp, "MiniDumpWriteDump"))
+                                : nullptr;
+     if (write == nullptr) {
+@@ -249,6 +256,7 @@ struct SdlState {
+     // Must outlive emu_window, which keeps a pointer to it.
+     InputCommon::InputSubsystem input_subsystem{};
+     std::unique_ptr<EmuWindow_SDL3> emu_window;
++    std::unique_ptr<EmucapEden::Bridge> emucap_bridge;
+     bool network_initialized{};
+ };
+ 
+@@ -394,6 +402,7 @@ static bool EditNup(const Core::LaunchParams& lp) {
+ }
+ 
+ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
++    if (EmucapPrintBuildProfile(argc, argv)) { *appstate = nullptr; return SDL_APP_SUCCESS; }
+ #ifdef _WIN32
+     SetUnhandledExceptionFilter(WriteCrashDump);
+ #endif
+@@ -472,6 +481,7 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
+         return SDL_APP_FAILURE;
+     }
+ 
++    ConfigureEmucap();
+     state->system.Initialize();
+ 
+ 
+@@ -551,6 +561,9 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
+         }
+     }
+ 
++    InitializeEmucapInput(state->system, state->input_subsystem);
++    state->emu_window->SetEmucapDisplay();
++
+     // Core is loaded, start the GPU (makes the GPU contexts current to this thread)
+     state->system.GPU().Start();
+     state->system.GetCpuManager().OnGpuReady();
+@@ -566,7 +579,7 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
+ 
+     // QLaunch launched applications (should) now reload shader cache.
+     static std::mutex shader_cache_reload_mutex;
+-    state->system.RegisterApplicationChangedCallback([&state](u64 changed_program_id) {
++    state->system.RegisterApplicationChangedCallback([state](u64 changed_program_id) {
+         if (!Settings::values.use_disk_shader_cache.GetValue()) {
+             return;
+         }
+@@ -590,6 +603,7 @@ extern "C" SDL_AppResult SDL_AppInit(void **appstate, int argc, char **argv) {
+     void(state->system.Run());
+     if (state->system.DebuggerEnabled())
+         state->system.InitializeDebugger();
++    state->emucap_bridge = MakeEmucapBridge(state->system, state->input_subsystem, lp.filepath);
+     return SDL_APP_CONTINUE;
+ }
+ // EDEN_NX2_KEY_SCRIPT="seconds:code,seconds:-code,..." (or "@<file>"): press (code) or release (-code) keyboard
+@@ -649,7 +663,9 @@ static void RunKeyScript(InputCommon::InputSubsystem& input_subsystem) {
+ 
+ extern "C" SDL_AppResult SDL_AppIterate(void *appstate) {
+     SdlState *state = (SdlState *)appstate;
+-    RunKeyScript(state->input_subsystem);
++    if (!state) return SDL_APP_FAILURE;
++    if (state->emucap_bridge) state->emucap_bridge->Pump();
++    if (!state->emucap_bridge) RunKeyScript(state->input_subsystem);
+     if (state->emu_window) {
+         state->emu_window->ApplyPendingTitle();
+     }
+@@ -666,6 +682,8 @@ extern "C" void SDL_AppQuit(void *appstate, SDL_AppResult result) {
+     if (!state) {
+         return;
+     }
++    if (!state) return;
++    if (state->emucap_bridge) state->emucap_bridge->Stop();
+     state->system.DetachDebugger();
+     // SDL calls this even when SDL_AppInit never powered the system on (no ROM given, --help or
+     // --version): the kernel is uninitialised then, and Pause()/ShutdownMainProcess() would

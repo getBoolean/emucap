@@ -61,7 +61,13 @@ fn collect_romfs(
     if depth > 16 || link_like(&fs::symlink_metadata(directory)?) {
         return Err(invalid("RomFS directory is linked or exceeds depth limit"));
     }
-    for entry in fs::read_dir(directory)? {
+    let mut entries = fs::read_dir(directory)?.peekable();
+    if entries.peek().is_none() {
+        return Err(invalid(
+            "empty RomFS directories are not supported by managed ExeFS staging",
+        ));
+    }
+    for entry in entries {
         let entry = entry?;
         let metadata = fs::symlink_metadata(entry.path())?;
         if link_like(&metadata) {

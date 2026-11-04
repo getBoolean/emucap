@@ -109,19 +109,53 @@ fn oversized_or_malformed_worker_output_retires_child() {
     }
 }
 
+#[test]
+fn active_native_cancellation_retires_before_the_request_deadline() {
+    let (_root, mut worker) = scripted_worker("import time\nwhile True: time.sleep(1)\n");
+    let identity = worker.identity.clone();
+    let cancellation = RequestCancellation::default();
+    let trigger = cancellation.clone();
+    let cancel_thread = std::thread::spawn(move || {
+        std::thread::sleep(Duration::from_millis(50));
+        trigger.cancel();
+    });
+    let started = Instant::now();
+    let error = worker
+        .exchange(
+            &Request::new(1, "status", json!({})),
+            Duration::from_secs(5),
+            &cancellation,
+        )
+        .unwrap_err();
+    cancel_thread.join().unwrap();
+    assert_eq!(error.kind(), io::ErrorKind::Interrupted);
+    assert!(started.elapsed() < Duration::from_secs(3));
+    assert!(worker.retired);
+    assert_eq!(
+        crate::live::runtime::process_state(&identity),
+        crate::live::runtime::ProcessState::Exited
+    );
+}
+
 fn host_fixture() -> (tempfile::TempDir, AzaharHost) {
     let root = tempfile::tempdir().unwrap();
     let script = root.path().join("worker.py");
-    std::fs::write(&script, r#"import json,sys
+    std::fs::write(&script, r#"import json,sys,pathlib
+profile=json.load(open(sys.argv[sys.argv.index('--profile')+1]))
+effective=pathlib.Path(sys.argv[sys.argv.index('--directory')+1])/'Azahar'
+effective.mkdir(parents=True,exist_ok=True)
+presents=0
 for line in sys.stdin:
     request=json.loads(line)
     method=request['method']
     if method=='hello':
-        result={'protocol_version':1,'adapter':'azahar-libretro','renderer':'software','geometry':[400,480]}
+        result={'protocol_version':1,'adapter':'azahar-libretro','system':'3ds','renderer':'software','geometry':[400,480],
+                'host_build':profile,'effective_core_user_root':str(effective.resolve())}
     elif method=='screenshot':
         result={'width':1,'height':1,'png_base64':'iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='}
     else:
-        result={'host_run_calls':0}
+        presents+=1
+        result={'host_run_calls':0,'software_presentations':presents,'state':'running','paused':False}
     print(json.dumps({'id':request['id'],'ok':True,'result':result}),flush=True)
 "#).unwrap();
     let profile = root.path().join("profile.json");
@@ -205,7 +239,7 @@ fn owned_host_authenticates_and_reaches_existing_screenshot_tool() {
             },
             TemporalAdmission {
                 runtime: launch_id.into(),
-                methods: vec![],
+                methods: vec!["wait_for_running_frames".into()],
             },
         )
     });
@@ -230,6 +264,73 @@ fn owned_host_authenticates_and_reaches_existing_screenshot_tool() {
     finished.store(true, Ordering::Release);
     drop(link);
     server.join().unwrap().unwrap();
+}
+
+#[test]
+fn running_wait_counts_presentations_and_leaves_worker_alive_on_interrupt_or_timeout() {
+    let (_root, mut host) = host_fixture();
+    let cap =
+        crate::live::progress::ProgressCapability::from_hello(&host.hello()["progress_capability"])
+            .unwrap();
+    for (frames, timeout, cancelled, terminal) in [
+        (3, 1000, false, "completed"),
+        (5000, 1, false, "timed_out"),
+        (5000, 1000, true, "interrupted"),
+    ] {
+        let cancellation = RequestCancellation::default();
+        if cancelled {
+            cancellation.cancel();
+        }
+        let response = host
+            .response(
+                Request::new(
+                    77,
+                    "wait_for_running_frames",
+                    json!({"frames":frames,"timeout_ms":timeout}),
+                ),
+                &cancellation,
+            )
+            .unwrap();
+        let value = response.result.unwrap();
+        assert_eq!(value["status"], terminal);
+        cap.validate_terminal(&value, frames).unwrap();
+        assert!(!host.worker.retired);
+        assert!(host.worker.child.try_wait().unwrap().is_none());
+    }
+    let rejected = host
+        .response(
+            Request::new(
+                78,
+                "wait_for_running_frames",
+                json!({"frames":0,"timeout_ms":5}),
+            ),
+            &RequestCancellation::default(),
+        )
+        .unwrap();
+    assert!(!rejected.ok);
+    assert!(!host.worker.retired);
+}
+
+#[test]
+fn stalled_native_owner_retires_instead_of_reporting_a_normal_wait_timeout() {
+    let (_root, mut host) = host_fixture();
+    let (_script, hung) =
+        scripted_worker("import sys,time\nsys.stdin.readline()\ntime.sleep(60)\n");
+    host.worker = hung;
+    let before = Instant::now();
+    assert!(host
+        .response(
+            Request::new(
+                2,
+                "wait_for_running_frames",
+                json!({"frames":1,"timeout_ms":1})
+            ),
+            &RequestCancellation::default()
+        )
+        .is_err());
+    assert!(host.worker.retired);
+    assert!(host.worker.child.try_wait().unwrap().is_some());
+    assert!(before.elapsed() < Duration::from_secs(6));
 }
 
 #[cfg(any(windows, target_os = "linux"))]

@@ -5,6 +5,7 @@ import ctypes as C
 import json
 import os
 import pathlib
+import queue
 import struct
 import sys
 import threading
@@ -19,6 +20,8 @@ AXES = ('stick_x', 'stick_y', 'cstick_x', 'cstick_y')
 OPTIONS = {b'citra_graphics_api': b'Software', b'citra_is_new_3ds': b'New 3DS',
            b'citra_layout_option': b'default', b'citra_resolution_factor': b'1',
            b'citra_enable_touch_touchscreen': b'enabled', b'citra_analog_function': b'c_stick'}
+OPTIONS.update({b'citra_enable_mouse_touchscreen': b'disabled', b'citra_enable_motion': b'disabled',
+                b'citra_enable_touch_pointer_timeout': b'disabled', b'citra_swap_screen': b'Top'})
 
 
 def png(width, height, rows):
@@ -62,8 +65,10 @@ class CoreFailure(RuntimeError):
 
 
 class Bridge:
-    def __init__(self, core, rom, directory):
-        self.core = C.CDLL(str(pathlib.Path(core).resolve()))
+    def __init__(self, core, rom, directory, profile=None):
+        core_path = pathlib.Path(core).resolve()
+        self.dll_directory = os.add_dll_directory(str(core_path.parent)) if sys.platform == 'win32' else None
+        self.core = C.CDLL(str(core_path))
         self.buttons, self.touch, self.axes = set(), None, {}
         self.frame, self.presentations, self.image = 0, 0, None
         self.pixel_format, self.failure = 0, None
@@ -80,10 +85,22 @@ class Bridge:
             'retro_init': (None, []), 'retro_deinit': (None, []),
             'retro_load_game': (C.c_bool, [C.POINTER(Game)]),
             'retro_unload_game': (None, []), 'retro_run': (None, []),
+            'emucap_get_build_profile_json': (C.c_char_p, []),
+            'emucap_get_effective_user_root': (C.c_char_p, []),
+            'emucap_get_last_error': (C.c_char_p, []),
         }
         for name, (result, arguments) in signatures.items():
             function = getattr(self.core, name)
             function.restype, function.argtypes = result, arguments
+        selected_path = pathlib.Path(profile) if profile else pathlib.Path(core).parent / 'emucap-emulator-build.json'
+        with selected_path.open('rb') as source:
+            selected_bytes = source.read(128 * 1024 + 1)
+        if len(selected_bytes) > 128 * 1024:
+            raise RuntimeError('Selected core build profile is oversized')
+        selected = json.loads(selected_bytes)
+        self.native_profile = json.loads(self.core.emucap_get_build_profile_json() or b'null')
+        if not isinstance(self.native_profile, dict) or self.native_profile != selected:
+            raise RuntimeError('Selected profile does not match compiled core build profile')
         if self.core.retro_api_version() != 1:
             raise RuntimeError('Unsupported libretro API version')
         info = SystemInfo()
@@ -122,6 +139,15 @@ class Bridge:
                 raise RuntimeError('Azahar rejected homebrew fixture')
             self.loaded = True
             self.check_failure()
+            actual = self.core.emucap_get_effective_user_root()
+            expected = pathlib.Path(directory).resolve() / 'Azahar'
+            try:
+                storage_matches = actual and pathlib.Path(os.fsdecode(actual)).resolve(strict=True) == expected
+            except OSError:
+                storage_matches = False
+            if not storage_matches:
+                raise RuntimeError('Unexpected effective core user root; managed storage was not established')
+            self.effective_core_user_root = str(pathlib.Path(os.fsdecode(actual)).resolve(strict=True))
             av = AvInfo()
             self.core.retro_get_system_av_info(C.byref(av))
             self.set_geometry(av.geometry)
@@ -132,6 +158,15 @@ class Bridge:
     def check_failure(self):
         if self.failure:
             raise CoreFailure(self.failure)
+        if hasattr(self, 'core'):
+            error = self.core.emucap_get_last_error()
+            if error:
+                raise CoreFailure(error.decode(errors='replace'))
+
+    def run_one(self):
+        self.core.retro_run()
+        self.frame += 1
+        self.check_failure()
 
     def close(self):
         if self.closed:
@@ -149,6 +184,8 @@ class Bridge:
     def set_geometry(self, geometry):
         if not 0 < geometry.width <= 4096 or not 0 < geometry.height <= 4096:
             raise ValueError('Invalid software geometry')
+        if (geometry.width, geometry.height) != (400, 480):
+            raise ValueError('Software touchscreen mapping requires the pinned 400x480 dual-screen layout')
         self.geometry = (geometry.width, geometry.height)
 
     def environment(self, cmd, data):
@@ -214,26 +251,45 @@ class Bridge:
         if not 0 < width <= 4096 or not 0 < height <= 4096:
             self.failure = 'Invalid video dimensions'
             return
-        rows = []
         size = 4 if self.pixel_format == 1 else 2
         if pitch < width * size or pitch > 1024 * 1024:
             self.failure = 'Invalid video pitch'
             return
-        for y in range(height):
-            raw = C.string_at(data + y * pitch, width * size)
-            row = bytearray()
-            for x in range(width):
-                value = int.from_bytes(raw[x*size:(x+1)*size], sys.byteorder)
-                if size == 4:
-                    rgb = ((value >> 16) & 255, (value >> 8) & 255, value & 255)
-                else:
-                    bits = 6 if self.pixel_format == 2 else 5
-                    rgb = (((value >> (bits+5)) & 31)*255//31,
-                           ((value >> 5) & ((1<<bits)-1))*255//((1<<bits)-1), (value & 31)*255//31)
-                row.extend(rgb)
-            rows.append(bytes(row))
-        self.image = (width, height, png(width, height, rows))
+        # libretro owns the buffer only until this callback returns.
+        rows = tuple(C.string_at(data + y * pitch, width * size) for y in range(height))
+        self._frame_snapshot = (self.pixel_format, width, height, rows)
+        self._image = None
         self.presentations = getattr(self, 'presentations', 0) + 1
+
+    @property
+    def image(self):
+        if self._image is None and self._frame_snapshot is not None:
+            pixel_format, width, height, native_rows = self._frame_snapshot
+            size = 4 if pixel_format == 1 else 2
+            rows = []
+            try:
+                for raw in native_rows:
+                    row = bytearray()
+                    for x in range(width):
+                        value = int.from_bytes(raw[x*size:(x+1)*size], sys.byteorder)
+                        if size == 4:
+                            rgb = ((value >> 16) & 255, (value >> 8) & 255, value & 255)
+                        else:
+                            bits = 6 if pixel_format == 2 else 5
+                            rgb = (((value >> (bits+5)) & 31)*255//31,
+                                   ((value >> 5) & ((1<<bits)-1))*255//((1<<bits)-1), (value & 31)*255//31)
+                        row.extend(rgb)
+                    rows.append(bytes(row))
+                self._image = (width, height, png(width, height, rows))
+            except Exception as error:
+                self.failure = f'Software capture encoding failed: {error}'
+                raise CoreFailure(self.failure) from error
+        return self._image
+
+    @image.setter
+    def image(self, value):
+        self._image = value
+        self._frame_snapshot = None
 
     @staticmethod
     def validate_touch(touch):
@@ -249,10 +305,12 @@ class Bridge:
         if method == 'hello':
             return {'protocol_version': 1, 'adapter': 'azahar-libretro', 'system': '3ds',
                     'renderer': 'software', 'core': self.system_info, 'geometry': list(self.geometry),
+                    'host_build': self.native_profile, 'effective_core_user_root': self.effective_core_user_root,
                     'methods': ['hello', 'status', 'set_input', 'touch', 'screenshot']}
         if method == 'status':
             return {'host_run_calls': self.frame, 'software_presentations': getattr(self, 'presentations', 0),
-                    'paused': True, 'timing': 'libretro_run calls; guest halt/exact stepping unqualified'}
+                    'paused': False, 'state': 'running',
+                    'timing': 'software callback presentations; guest halt/exact stepping unqualified'}
         if method == 'set_input':
             names, axes = params.get('buttons', []), params.get('axes', {})
             if params.get('port', 0) != 0 or type(params.get('port', 0)) is not int:
@@ -288,9 +346,7 @@ class Bridge:
             if type(count) is not int or not 1 <= count <= 120:
                 raise ValueError('count must be 1..120')
             for _ in range(count):
-                self.core.retro_run()
-                self.frame += 1
-                self.check_failure()
+                self.run_one()
             return {'host_run_calls': self.frame, 'software_presentations': self.presentations}
         if method == 'screenshot':
             if self.image is None:
@@ -302,9 +358,38 @@ class Bridge:
         raise NotImplementedError(method)
 
 
-def serve(bridge, source, output):
+def serve(bridge, source, output, continuous=False):
+    # The reader never calls the core. Every ABI call, including init/run/close, belongs
+    # to the main thread; commands apply between retro_run calls without a CPU halt claim.
+    incoming = queue.Queue(maxsize=16)
+    if continuous:
+        def read_requests():
+            try:
+                while True:
+                    line = source.readline(MAX_REQUEST_BYTES + 2)
+                    incoming.put(line)
+                    if not line or len(line) > MAX_REQUEST_BYTES or not line.endswith(b'\n'):
+                        return
+            except BaseException as error:
+                incoming.put(error)
+        threading.Thread(target=read_requests, name='private-request-reader', daemon=True).start()
+    next_frame = time.monotonic() + 1 / 60
     while True:
-        line = source.readline(MAX_REQUEST_BYTES + 2)
+        if continuous:
+            if time.monotonic() >= next_frame:
+                bridge.run_one()
+                next_frame = max(next_frame + 1 / 60, time.monotonic())
+            try:
+                line = incoming.get(timeout=max(0, next_frame - time.monotonic()))
+            except queue.Empty:
+                bridge.run_one()
+                # Pacing is host wall-clock scheduling, not deterministic guest time.
+                next_frame = max(next_frame + 1 / 60, time.monotonic())
+                continue
+            if isinstance(line, BaseException):
+                raise line
+        else:
+            line = source.readline(MAX_REQUEST_BYTES + 2)
         if not line:
             return
         if len(line) > MAX_REQUEST_BYTES or not line.endswith(b'\n'):
@@ -344,6 +429,7 @@ def main():
     parser.add_argument('--core', required=True)
     parser.add_argument('--rom', required=True)
     parser.add_argument('--directory', required=True)
+    parser.add_argument('--profile')
     parser.add_argument('--supervisor-pid', type=int)
     parser.add_argument('--supervisor-start')
     args = parser.parse_args()
@@ -352,9 +438,9 @@ def main():
     with os.fdopen(os.dup(sys.stdout.fileno()), 'wb', buffering=0) as output:
         sys.stdout.flush()
         os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-        bridge = Bridge(args.core, args.rom, args.directory)
+        bridge = Bridge(args.core, args.rom, args.directory, args.profile)
         try:
-            serve(bridge, sys.stdin.buffer, output)
+            serve(bridge, sys.stdin.buffer, output, continuous=True)
         finally:
             bridge.close()
 

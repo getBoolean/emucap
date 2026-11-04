@@ -1,6 +1,63 @@
 use super::*;
 use crate::emulator_profile::{maintained_source, BUILD_PROFILE_SCHEMA};
 
+#[test]
+fn executable_probe_rejects_output_above_its_byte_budget() {
+    let python = resolve_python(None).unwrap();
+    let mut command = Command::new(python);
+    command.args(["-I", "-c", "print('x' * 32768)"]);
+    assert!(probe_output(command, 16 * 1024, "bounded-output-test").is_err());
+}
+
+#[test]
+fn executable_probe_timeout_reaps_the_exact_child() {
+    let python = resolve_python(None).unwrap();
+    let root = tempfile::tempdir().unwrap();
+    let marker = root.path().join("probe-pid");
+    let worker_marker = marker.clone();
+    let started = Instant::now();
+    let worker = std::thread::spawn(move || {
+        let mut command = Command::new(python);
+        command.args(["-I", "-c", "import os,pathlib,sys,time; pathlib.Path(sys.argv[1]).write_text(str(os.getpid())); time.sleep(30)"])
+            .arg(worker_marker);
+        probe_output(command, 1024, "bounded-time-test")
+    });
+    while !marker.is_file() && started.elapsed() < Duration::from_secs(4) {
+        std::thread::sleep(Duration::from_millis(10));
+    }
+    let pid: u32 = std::fs::read_to_string(marker).unwrap().parse().unwrap();
+    let identity = crate::live::runtime::capture_process(pid);
+    assert!(identity.start_identity.is_some());
+    let error = worker.join().unwrap().unwrap_err();
+    assert!(error.to_string().contains("probe timed out"));
+    assert!(started.elapsed() < Duration::from_secs(8));
+    assert_eq!(
+        crate::live::runtime::process_state(&identity),
+        crate::live::runtime::ProcessState::Exited
+    );
+}
+
+#[cfg(unix)]
+#[test]
+fn python_probe_accepts_a_real_interpreter_symlink() {
+    let output = Command::new("python3")
+        .args([
+            "-c",
+            "import os,sys; print(os.path.realpath(sys.executable))",
+        ])
+        .output()
+        .expect("Python 3.12+ is required for emulator-family tests");
+    assert!(output.status.success());
+    let executable = PathBuf::from(String::from_utf8(output.stdout).unwrap().trim());
+    let root = tempfile::tempdir().unwrap();
+    let alias = root.path().join("python alias");
+    std::os::unix::fs::symlink(&executable, &alias).unwrap();
+    assert_eq!(
+        resolve_python(Some(alias.to_str().unwrap())).unwrap(),
+        executable.canonicalize().unwrap()
+    );
+}
+
 fn native() -> ResolvedEmulator {
     let pin = maintained_source("eglantine").unwrap();
     ResolvedEmulator {

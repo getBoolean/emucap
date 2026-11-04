@@ -4,11 +4,13 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include "emucap_profile.h"
 #ifdef _WIN32
 #include <windows.h>
 #define EXPORT __declspec(dllexport)
 #else
 #include <unistd.h>
+#include <sys/stat.h>
 #define EXPORT __attribute__((visibility("default")))
 #endif
 
@@ -25,6 +27,7 @@ struct av_info { struct geometry geometry; double fps, sample_rate; };
 struct game { const char *path; const void *data; size_t size; const char *meta; };
 struct variable { const char *key, *value; };
 static const char *renderer_option, *fallback_option;
+static char effective_root[4096];
 
 static int mode(const char *value) {
     const char *actual = getenv("EMUCAP_FAKE_MODE");
@@ -35,6 +38,13 @@ static void event(const char *name) {
     if (path) { FILE *file = fopen(path, "a"); if (file) { fprintf(file, "%s\n", name); fclose(file); } }
 }
 EXPORT unsigned retro_api_version(void) { return mode("bad_version") ? 2 : 1; }
+EXPORT const char *emucap_get_build_profile_json(void) {
+    return mode("bad_profile") ? "{}" : EMUCAP_BUILD_PROFILE_JSON;
+}
+EXPORT const char *emucap_get_effective_user_root(void) {
+    return mode("bad_root") ? "/unmanaged/Azahar/" : effective_root;
+}
+EXPORT const char *emucap_get_last_error(void) { return ""; }
 EXPORT void retro_set_environment(environment_fn callback) { environment = callback; }
 EXPORT void retro_set_video_refresh(video_fn callback) { video = callback; }
 EXPORT void retro_set_input_state(input_fn callback) { input = callback; }
@@ -62,6 +72,14 @@ EXPORT void retro_init(void) {
 }
 EXPORT bool retro_load_game(const struct game *game) {
     event("load");
+    const char *directory = NULL;
+    if (!environment(31, &directory) || !directory) return false;
+    snprintf(effective_root, sizeof effective_root, "%s/Azahar/", directory);
+#ifdef _WIN32
+    CreateDirectoryA(effective_root, NULL);
+#else
+    mkdir(effective_root, 0700);
+#endif
     return game && game->path && !mode("reject_load");
 }
 EXPORT void retro_run(void) {

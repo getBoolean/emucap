@@ -10,7 +10,7 @@ pub(super) fn precondition(
     system: &str,
     options: Option<&EmulatorOptions>,
 ) -> serde_json::Value {
-    match family::resolve(root, system, options.unwrap_or(&EmulatorOptions::default())) {
+    match family::resolve_verified(root, system, options.unwrap_or(&EmulatorOptions::default())) {
         Ok(selected) => serde_json::json!({
             "available":true,"path":selected.binary.display().to_string(),
             "profile":selected.profile,"renderer":selected.renderer,
@@ -60,7 +60,7 @@ pub(super) fn runtime_identity_error(
     status: &serde_json::Value,
     capabilities: &emucap::live::link::Capabilities,
     expected_root: &str,
-) -> Result<bool, String> {
+) -> Result<(), String> {
     let identity = &capabilities.identity;
     let hello = serde_json::json!({"protocol_version":capabilities.protocol_version,
         "adapter":identity.adapter,"system":identity.system,"host_build":identity.host_build,
@@ -76,7 +76,7 @@ pub(super) fn runtime_identity_error(
     if !emucap::content_identity::same_content_path(expected_root, root) {
         return Err("native runtime user root differs from the managed generation".into());
     }
-    Ok(true)
+    Ok(())
 }
 
 #[cfg(test)]

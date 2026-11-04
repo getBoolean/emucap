@@ -87,6 +87,64 @@ fn cpu_feature_available(feature: &str) -> bool {
     cfg!(target_arch = "aarch64") && feature == "neon"
 }
 
+fn probe_output(mut command: Command, limit: usize, label: &str) -> io::Result<Vec<u8>> {
+    command
+        .stdin(Stdio::null())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null());
+    #[cfg(windows)]
+    {
+        use std::os::windows::process::CommandExt;
+        command.creation_flags(0x0800_0000);
+    }
+    let mut child = command
+        .spawn()
+        .map_err(|error| invalid(format!("{label} prerequisite unavailable: {error}")))?;
+    let stdout = child
+        .stdout
+        .take()
+        .ok_or_else(|| invalid(format!("{label} probe has no output channel")))?;
+    let (tx, rx) = std::sync::mpsc::sync_channel(1);
+    std::thread::spawn(move || {
+        let mut output = Vec::new();
+        let result = stdout
+            .take(limit as u64 + 1)
+            .read_to_end(&mut output)
+            .map(|_| output);
+        let _ = tx.send(result);
+    });
+    let deadline = Instant::now() + Duration::from_secs(5);
+    let result = loop {
+        match child.try_wait() {
+            Ok(Some(status)) => break status,
+            Ok(None) => (),
+            Err(error) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(error);
+            }
+        }
+        if Instant::now() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(invalid(format!("{label} prerequisite probe timed out")));
+        }
+        std::thread::sleep(Duration::from_millis(10));
+    };
+    if !result.success() {
+        return Err(invalid(format!(
+            "{label} executable failed its runtime probe"
+        )));
+    }
+    let output = rx
+        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
+        .map_err(|_| invalid(format!("{label} probe did not close its output")))??;
+    if output.len() > limit {
+        return Err(invalid(format!("{label} probe output exceeds bound")));
+    }
+    Ok(output)
+}
+
 /// Execute the interpreter probe rather than trusting a PATH entry (Windows Store aliases exist).
 fn resolve_python(explicit: Option<&str>) -> io::Result<PathBuf> {
     let override_path = explicit
@@ -101,54 +159,8 @@ fn resolve_python(explicit: Option<&str>) -> io::Result<PathBuf> {
     } else {
         Command::new("python3")
     };
-    command.args(["-I", "-c", "import sys,struct,json; print(json.dumps([sys.version_info.major,sys.version_info.minor,struct.calcsize('P'),sys.executable]))"])
-        .stdin(Stdio::null()).stdout(Stdio::piped()).stderr(Stdio::null());
-    #[cfg(windows)]
-    {
-        use std::os::windows::process::CommandExt;
-        command.creation_flags(0x0800_0000);
-    }
-    let mut child = command.spawn().map_err(|error| {
-        invalid(format!(
-            "Python prerequisite unavailable: {error}; select a real Python 3.12+ executable"
-        ))
-    })?;
-    let stdout = child
-        .stdout
-        .take()
-        .ok_or_else(|| invalid("Python probe has no output channel"))?;
-    let (tx, rx) = std::sync::mpsc::sync_channel(1);
-    std::thread::spawn(move || {
-        let mut output = Vec::new();
-        let result = stdout
-            .take(16 * 1024 + 1)
-            .read_to_end(&mut output)
-            .map(|_| output);
-        let _ = tx.send(result);
-    });
-    let deadline = Instant::now() + Duration::from_secs(5);
-    let result = loop {
-        if let Some(status) = child.try_wait()? {
-            break status;
-        }
-        if Instant::now() >= deadline {
-            let _ = child.kill();
-            let _ = child.wait();
-            return Err(invalid("Python prerequisite probe timed out"));
-        }
-        std::thread::sleep(Duration::from_millis(10));
-    };
-    if !result.success() {
-        return Err(invalid(
-            "selected Python executable failed its runtime probe",
-        ));
-    }
-    let output = rx
-        .recv_timeout(deadline.saturating_duration_since(Instant::now()))
-        .map_err(|_| invalid("Python prerequisite probe did not close its output"))??;
-    if output.len() > 16 * 1024 {
-        return Err(invalid("Python prerequisite probe output exceeds bound"));
-    }
+    command.args(["-I", "-c", "import sys,struct,json; print(json.dumps([sys.version_info.major,sys.version_info.minor,struct.calcsize('P'),sys.executable]))"]);
+    let output = probe_output(command, 16 * 1024, "Python")?;
     let (major, minor, pointer_size, executable): (u32, u32, usize, String) =
         serde_json::from_slice(&output)
             .map_err(|_| invalid("Python prerequisite probe is not a real Python runtime"))?;
@@ -157,7 +169,56 @@ fn resolve_python(explicit: Option<&str>) -> io::Result<PathBuf> {
             "Azahar requires Python 3.12+ with the host architecture",
         ));
     }
-    regular(executable)
+    regular(Path::new(&executable).canonicalize()?)
+}
+
+/// Query native identity without loading a guest, before replacement can signal the old generation.
+pub fn verify_compiled_profile(selected: &ResolvedEmulator) -> io::Result<()> {
+    let mut command;
+    if selected.profile.family == EmulatorFamily::AzaharLibretro {
+        let mut host = Command::new(&selected.binary);
+        host.arg("--host-info");
+        let value: serde_json::Value =
+            serde_json::from_slice(&probe_output(host, 16 * 1024, "Azahar supervisor")?)
+                .map_err(|error| invalid(format!("invalid Azahar supervisor identity: {error}")))?;
+        if value["schema"] != "emucap-azahar-host/v1"
+            || value["bridge_api"] != 1
+            || value["worker_protocol"] != 1
+        {
+            return Err(invalid("incompatible Azahar supervisor API"));
+        }
+        command = Command::new(
+            selected
+                .python
+                .as_ref()
+                .ok_or_else(|| invalid("Azahar interpreter missing"))?,
+        );
+        command.args(["-I","-c", "import ctypes,json,os,pathlib,sys; p=pathlib.Path(sys.argv[1]); d=os.add_dll_directory(str(p.parent)) if sys.platform=='win32' else None; c=ctypes.CDLL(str(p)); f=c.emucap_get_build_profile_json; f.restype=ctypes.c_char_p; f.argtypes=[]; print(json.dumps(json.loads(f())))"])
+            .arg(selected.core.as_ref().ok_or_else(||invalid("Azahar core missing"))?);
+    } else {
+        command = Command::new(&selected.binary);
+        command.arg("--emucap-build-profile");
+    }
+    let profile: BuildProfile =
+        serde_json::from_slice(&probe_output(command, 64 * 1024, "native build identity")?)
+            .map_err(|error| invalid(format!("native build identity query failed: {error}")))?;
+    profile.validate().map_err(invalid)?;
+    if profile != selected.profile {
+        return Err(invalid(
+            "compiled emulator profile differs from selected sidecar",
+        ));
+    }
+    Ok(())
+}
+
+pub fn resolve_verified(
+    root: &Path,
+    system: &str,
+    options: &EmulatorOptions,
+) -> io::Result<ResolvedEmulator> {
+    let selected = resolve(root, system, options)?;
+    verify_compiled_profile(&selected)?;
+    Ok(selected)
 }
 
 pub fn resolve(

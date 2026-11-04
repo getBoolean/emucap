@@ -167,7 +167,7 @@ pub(crate) fn make_launch(
         let Some(root) = find_repo_root() else {
             return serde_json::json!({"launched":false,"error":"emucap repository root unavailable"});
         };
-        match emucap::launch::emulator_family::resolve(
+        match emucap::launch::emulator_family::resolve_verified(
             &root,
             system,
             a.emulator.as_ref().unwrap_or(&Default::default()),
@@ -756,7 +756,7 @@ fn record_token_cleanup_error(outcome: &mut serde_json::Value, error: Option<Str
 }
 
 pub(super) fn adapter_ready_timeout(adapter: &str) -> std::time::Duration {
-    if matches!(adapter, "azahar" | "eden_family") {
+    if super::emulator_family::is_family(adapter) {
         return std::time::Duration::from_secs(45);
     }
     // Mesen starts an Avalonia window and then loads the command-line Lua script. On macOS a cold

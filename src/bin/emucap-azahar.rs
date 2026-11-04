@@ -5,6 +5,14 @@ use std::path::Path;
 
 fn main() -> anyhow::Result<()> {
     let args: Vec<String> = std::env::args().collect();
+    if args.len() == 2 && args[1] == "--host-info" {
+        println!(
+            "{}",
+            serde_json::json!({"schema":"emucap-azahar-host/v1","bridge_api":1,
+            "worker_protocol":1,"architecture":std::env::consts::ARCH,"build":emucap::build_identity::BUILD_HASH})
+        );
+        return Ok(());
+    }
     if args.len() != 9 {
         return Err(anyhow!("usage: emucap-azahar <port> <python> <worker.py> <core> <content> <runtime-dir> <build-profile.json> <startup-receipt.json>"));
     }
@@ -37,7 +45,7 @@ fn main() -> anyhow::Result<()> {
         probe,
         TemporalAdmission {
             runtime,
-            methods: vec![],
+            methods: vec!["wait_for_running_frames".into()],
         },
     )?;
     Ok(())

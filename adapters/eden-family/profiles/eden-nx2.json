@@ -1,0 +1,8 @@
+{
+  "fork": "eden-nx2",
+  "repository": "https://git.eden-emu.dev/Takoroka/eden-nx2.git",
+  "reference": "eden-nx2",
+  "revision": "50fa86bbbc403ad565eb44fcc281f16f77c69e15",
+  "systems": ["switch", "switch2"],
+  "renderers": ["vulkan", "opengl"]
+}
