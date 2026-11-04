@@ -1,5 +1,11 @@
 # Ozone and the lawful Switch 2 witness
 
+The subsequent [native control recovery](emulator-control-recovery.md) fixes the
+TLS teardown defect, records repeatable Intel-Vulkan control on both Switch 2
+forks, and qualifies their automatic memory-layout transitions. The earlier
+attempts and their exact binaries below remain historical evidence. The AMD WSI
+failure and automatic whole-pool guest heap path are separate limitations.
+
 ## Current result: Ounce homebrew runs in both maintained forks
 
 The follow-up user request produced `main.npdm` and a complete source-built ExeFS

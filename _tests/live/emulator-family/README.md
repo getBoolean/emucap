@@ -66,6 +66,15 @@ Supply the expected archive hash from the reviewed pinned-source library build;
 the builder rejects a stale archive or untracked `nx` source files. The hash for
 the qualified local GCC 16.1 build is recorded in the current evidence report.
 
+If the default GPU cannot present to the native window, select a qualified host
+device explicitly with `build_ounce_fixture.py --vulkan-device N` along with its
+other arguments. `vulkaninfo --summary` lists host devices; indexes can differ
+between hosts. On the current Windows host AMD surface queries fail, while
+device 1 (Intel UHD 630) passes. The generated INI and manifest bind that choice;
+check the native log for the actual driver/device. See
+[control recovery](../../../docs/emulator-control-recovery.md) for the independent
+WSI diagnosis and the real failed-start teardown regression.
+
 The builder pins libnx-ounce and switch-tools, compiles a dedicated Ounce-only
 `npdmtool` variant with 0x180-byte signature/modulus storage, and validates the
 generated layout and access-section bounds. This is an emucap extension of the

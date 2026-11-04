@@ -88,6 +88,89 @@ index f77da2e..6ed7f67 100644
  
      }
  
+diff --git a/src/core/core.cpp b/src/core/core.cpp
+index 00ee551..e5b7d13 100644
+--- a/src/core/core.cpp
++++ b/src/core/core.cpp
+@@ -616,7 +616,11 @@ struct System::Impl {
+ 
+ System::System() : impl{std::make_unique<Impl>(*this)} {}
+ 
+-System::~System() = default;
++System::~System() {
++    // CoreTiming is declared before KernelCore, so implicit destruction joins its
++    // host thread too late. Stop it while the kernel's dummy-thread owners live.
++    impl->core_timing.Reset();
++}
+ 
+ CpuManager& System::GetCpuManager() {
+     return impl->cpu_manager;
+diff --git a/src/core/hle/kernel/kernel.cpp b/src/core/hle/kernel/kernel.cpp
+index 9e6ccc2..bd41334 100644
+--- a/src/core/hle/kernel/kernel.cpp
++++ b/src/core/hle/kernel/kernel.cpp
+@@ -9,7 +9,10 @@
+ #include <bitset>
+ #include <functional>
+ #include <memory>
++#include <mutex>
+ #include <thread>
++#include <type_traits>
++#include <vector>
+ #include "common/container/unordered_map.h"
+ #include "common/container/unordered_set.h"
+ #include <utility>
+@@ -54,19 +57,26 @@ namespace Kernel {
+ 
+ // Can only be used by a single implementation PER THREAD
+ struct ThreadLocalData {
+-    std::optional<KThread> raw_thread;
+     KThread* current_thread = nullptr;
+     KThread* thread = nullptr;
+     u8 host_thread_id = UINT8_MAX;
+     bool is_phantom_mode_for_singlecore = false;
+     bool lock = false;
+ };
++// MinGW emulated TLS can release its storage before C++ thread-local destructors.
++// Keep only non-owning, trivially destructible state here; the kernel owns dummy threads.
++static_assert(std::is_trivially_destructible_v<ThreadLocalData>);
+ 
+ struct KernelCore::Impl {
+     static constexpr size_t ApplicationMemoryBlockSlabHeapSize = 20000;
+     static constexpr size_t SystemMemoryBlockSlabHeapSize = 10000;
+     static constexpr size_t BlockInfoSlabHeapSize = 4000;
+     static constexpr size_t ReservedDynamicPageCount = 64;
++
++    // Declared before worker owners so their threads finish before these objects
++    // are destroyed. Heap addresses stay stable when the owner vector grows.
++    std::mutex host_dummy_threads_mutex;
++    std::vector<std::unique_ptr<KThread>> host_dummy_threads;
+     // Be very careful when handling TLS data
+     // We do not want to concern ourselves with the appropriate way to manage them
+     // across **all** threads, we just need these for a few spare threads (+host/guest threads)
+@@ -397,12 +407,16 @@ struct KernelCore::Impl {
+     // Gets the dummy KThread for the caller, allocating a new one if this is the first time
+     KThread* GetHostDummyThread(ThreadLocalData& t, KThread* existing_thread) {
+         if (t.thread == nullptr) {
+-            auto const initialize = [this](KThread* thread) {
+-                ASSERT(KThread::InitializeDummyThread(system, thread, nullptr).IsSuccess());
+-                return thread;
+-            };
+-            t.raw_thread.emplace(system.Kernel());
+-            t.thread = existing_thread ? existing_thread : initialize(&*t.raw_thread);
++            if (existing_thread != nullptr) {
++                t.thread = existing_thread;
++            } else {
++                auto thread = std::make_unique<KThread>(system.Kernel());
++                ASSERT(KThread::InitializeDummyThread(system, thread.get(), nullptr).IsSuccess());
++                auto* const pointer = thread.get();
++                std::scoped_lock lock{host_dummy_threads_mutex};
++                host_dummy_threads.push_back(std::move(thread));
++                t.thread = pointer;
++            }
+             ASSERT(t.thread != nullptr);
+         }
+         return t.thread;
 diff --git a/src/video_core/renderer_base.h b/src/video_core/renderer_base.h
 index 46f8276..5308904 100644
 --- a/src/video_core/renderer_base.h

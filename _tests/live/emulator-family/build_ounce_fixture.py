@@ -30,7 +30,11 @@ def main():
     parser.add_argument('--cc', required=True, help='Host C compiler for npdmtool')
     parser.add_argument('--libnx-ounce-library-sha256', required=True,
                         help='Expected libnx.a SHA-256 from the reviewed pinned-source library build')
+    parser.add_argument('--vulkan-device', type=int,
+                        help='Explicit host Vulkan device index; enumerate and qualify it on this host')
     args = parser.parse_args()
+    if args.vulkan_device is not None and args.vulkan_device < 0:
+        parser.error('--vulkan-device must be nonnegative')
     root, library_source = args.devkitpro.resolve(), args.libnx_ounce_source.resolve()
     library_sha256 = checked_library(library_source, args.libnx_ounce_library_sha256)
     library = library_source / 'nx'
@@ -39,7 +43,10 @@ def main():
     exefs = out / 'exefs'
     exefs.mkdir()
     config = out / 'emulator.ini'
-    config.write_text('[Core]\nmemory_layout_mode=4\nmemory_layout_mode\\default=false\n', encoding='utf-8')
+    settings = '[Core]\nmemory_layout_mode=4\nmemory_layout_mode\\default=false\n'
+    if args.vulkan_device is not None:
+        settings += f'\n[Renderer]\nvulkan_device={args.vulkan_device}\nvulkan_device\\default=false\n'
+    config.write_text(settings, encoding='utf-8')
     sdk = out / 'sdk/libounce'
     sdk.mkdir(parents=True)
     shutil.copy2(library / 'switch.ld', sdk / 'switch.ld')
@@ -64,6 +71,7 @@ def main():
         'libnx_ounce_revision': LIBOUNCE_REVISION, 'libnx_ounce_library_sha256': library_sha256,
         'source_sha256': sha(source), 'descriptor_sha256': sha(descriptor),
         'emulator_config_sha256': sha(config), 'heap_bytes': 64 * 1024 * 1024,
+        'vulkan_device_index': args.vulkan_device,
         'members': {p.name: sha(p) for p in sorted(exefs.iterdir())},
         'npdm': json.loads(metadata), 'command': command,
         'compiler': subprocess.check_output([str(compiler), '--version'], text=True).splitlines()[0],

@@ -6,6 +6,14 @@ qualification are separate results. No Switch 2 game-compatibility claim is made
 The requested Eglantine source is **Djihads80/Eglantine**, branch `nx2`, revision
 `c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4`; it supersedes the earlier Selevet plan target.
 
+The subsequent [control recovery](emulator-control-recovery.md) records updated
+native patch/executable hashes, clean failed-start regression results on all
+three Eden forks, three repeated Switch 2 control runs on each maintained fork,
+and passing automatic 12 GiB transitions. These current runs explicitly select
+Intel Vulkan on this host; AMD surface-capability queries currently fail even
+outside the emulator. Earlier evidence below remains historical rather than
+proof of the updated binaries.
+
 ## Source and operation matrix
 
 | Profile | Source target | Implemented bridge scope | Live status |
