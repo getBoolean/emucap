@@ -93,6 +93,9 @@ std::string Env(const char* name) {
 bool Has(const Json& values, const std::string& value) {
     return values.is_array() && std::find(values.begin(),values.end(),Json(value))!=values.end();
 }
+std::filesystem::path Utf8Path(const std::string& value) {
+    return std::filesystem::path(std::u8string(value.begin(), value.end()));
+}
 bool Readable(Socket socket,int timeout_ms) {
     fd_set set; FD_ZERO(&set); FD_SET(socket,&set);
     timeval timeout{timeout_ms/1000,(timeout_ms%1000)*1000};
@@ -266,7 +269,7 @@ bool Config::Enabled() {return !Env("EMUCAP_PORT").empty();}
 Config Config::FromEnvironment(Json profile,std::string renderer,std::string content,std::string effective_root,std::string adapter_build,std::string native_system,std::string expected_family) {
     if(expected_family!="eden-family"&&expected_family!="ryujinx-family")
         throw std::invalid_argument("unknown native bridge family");
-    std::ifstream expected_file(std::filesystem::u8path(Env("EMUCAP_BUILD_PROFILE")),std::ios::binary);
+    std::ifstream expected_file(Utf8Path(Env("EMUCAP_BUILD_PROFILE")),std::ios::binary);
     std::string expected_bytes;
     char byte;
     while(expected_file.get(byte)) {
@@ -282,8 +285,8 @@ Config Config::FromEnvironment(Json profile,std::string renderer,std::string con
     if(end!=port_text.size()||port_value==0||port_value>65535||
         !emucap_front_auth::detail::ValidLaunchId(result.launch_id)||
         emucap_front_auth::detail::Boundary(result.front_key)==0||result.content.empty()||
-        !std::filesystem::u8path(result.user_root).is_absolute()||
-        std::filesystem::weakly_canonical(std::filesystem::u8path(result.user_root))!=std::filesystem::weakly_canonical(std::filesystem::u8path(Env("EMUCAP_USER_ROOT")))||
+        !Utf8Path(result.user_root).is_absolute()||
+        std::filesystem::weakly_canonical(Utf8Path(result.user_root))!=std::filesystem::weakly_canonical(Utf8Path(Env("EMUCAP_USER_ROOT")))||
         result.build_profile.value("schema","")!="emucap-emulator-build/v1"||
         result.build_profile.value("family","")!=expected_family||result.build_profile.value("bridge_api",0)!=1||
         result.system!=native_system||result.adapter_build.empty()||!Has(result.build_profile["systems"],result.system)||!Has(result.build_profile["renderers"],result.renderer))

@@ -54,7 +54,8 @@ def exercise(library):
     dll.emucap_native_fail_capture.argtypes = [c.c_void_p, c.c_uint64, c.c_char_p, c.c_size_t]
     error = c.create_string_buffer(256)
     with tempfile.TemporaryDirectory(prefix="emucap-ryujinx-abi-") as directory:
-        root = Path(directory)
+        root = Path(directory) / 'utf8-\u00e9-\u65e5'
+        root.mkdir()
         listener = socket.socket()
         listener.bind(("127.0.0.1", 0)); listener.listen(1); listener.settimeout(5)
         port = listener.getsockname()[1]
@@ -205,6 +206,7 @@ def exercise(library):
             send("screenshot")
             deadline = time.monotonic()+2
             while state["capture"] == previous and time.monotonic()<deadline: time.sleep(.01)
+            assert state["capture"] != previous, 'pending capture was not admitted before stop'
             stop.set(); worker.join(5); assert not worker.is_alive()
             assert not owner_errors, owner_errors
             assert state["buttons"] == 0 and state["touch"] is None
