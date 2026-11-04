@@ -4,6 +4,28 @@
   "contract_version": 3,
   "exceptions": [
     {
+      "id": "azahar.input-touch.persistent-only",
+      "feature": "input.touch-wire",
+      "kind": "capability_absent",
+      "targets": ["INPUT.TOUCH.PULSE.1"],
+      "scope": {"adapter": "azahar-libretro", "systems": ["3ds"]},
+      "activation": {"touch_capability": "persistent_single_contact"},
+      "constraints": {"input.touch.modes": ["hold", "release"], "input.ports.allowed": [0]},
+      "public_behavior": {"invalid": "unsupported"},
+      "verification": ["contract-test:persistent-touch-hides-pulse"]
+    },
+    {
+      "id": "eden.input-touch.persistent-only",
+      "feature": "input.touch-wire",
+      "kind": "capability_absent",
+      "targets": ["INPUT.TOUCH.PULSE.1"],
+      "scope": {"adapter": "eden-family-native", "systems": ["switch", "switch2"]},
+      "activation": {"touch_capability": "persistent_single_contact"},
+      "constraints": {"input.touch.modes": ["hold", "release"], "input.ports.allowed": [0]},
+      "public_behavior": {"invalid": "unsupported"},
+      "verification": ["contract-test:persistent-touch-hides-pulse"]
+    },
+    {
       "id": "mesen.execution.instruction-step-absent",
       "feature": "execution.step",
       "kind": "capability_absent",

@@ -40,6 +40,9 @@ pub(super) fn normalize_system(system: &str) -> Option<&'static str> {
         "gamecube" | "game-cube" | "gc" | "ngc" | "dolphin-gc" => Some("gamecube"),
         "wii" | "nintendo-wii" | "dolphin-wii" => Some("wii"),
         "xbox" | "original-xbox" | "ogxbox" => Some("xbox"),
+        "3ds" | "ctr" | "n3ds" | "new3ds" | "azahar" => Some("3ds"),
+        "switch" | "nx" | "nintendo-switch" => Some("switch"),
+        "switch2" | "switch-2" | "nx2" | "nintendo-switch-2" => Some("switch2"),
         _ => None,
     }
 }
@@ -64,6 +67,8 @@ pub(super) fn adapter_for_system(system: &str) -> (&'static str, Option<&'static
         "ps2" => ("pcsx2", None),
         "gamecube" | "wii" => ("dolphin", None),
         "xbox" => ("xemu", None),
+        "3ds" => ("azahar", None),
+        "switch" | "switch2" => ("eden_family", None),
         _ => ("", None),
     }
 }

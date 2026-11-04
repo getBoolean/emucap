@@ -14,6 +14,27 @@ use std::sync::Mutex;
 static ENV_LOCK: Mutex<()> = Mutex::new(());
 
 #[test]
+fn emulator_family_system_selection_and_ambiguous_switch_content() {
+    assert_eq!(normalize_system("ctr"), Some("3ds"));
+    assert_eq!(normalize_system("nx2"), Some("switch2"));
+    assert_eq!(adapter_for_system("3ds"), ("azahar", None));
+    assert_eq!(adapter_for_system("switch2"), ("eden_family", None));
+    assert_eq!(infer_system(Some("fixture.3dsx"), None)["system"], "3ds");
+    assert_eq!(
+        infer_system(Some("fixture.nro"), None)["needs_user_input"],
+        true
+    );
+    let selection = serde_json::json!({"content_path":"fixture.nro","system":"switch2",
+        "emulator":{"fork":"eglantine","binary":"/explicit/native build","renderer":"vulkan"}});
+    let parsed: LaunchPlanArgs = serde_json::from_value(selection).unwrap();
+    assert_eq!(parsed.emulator.unwrap().fork.as_deref(), Some("eglantine"));
+    assert_eq!(
+        adapter_ready_timeout("azahar"),
+        std::time::Duration::from_secs(45)
+    );
+}
+
+#[test]
 fn cue_marker_scan_does_not_read_any_indirect_reference() {
     let root = tempfile::tempdir().unwrap();
     let cue_dir = root.path().join("disc");
@@ -334,6 +355,7 @@ fn launch_plan_exposes_only_the_mcp_launcher() {
     let plan = make_launch_plan(
         Some(47805),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.iso".into()),
             system: Some("ps2".into()),
             pc98_backend: None,
@@ -451,6 +473,7 @@ fn launch_plan_for_xbox_makes_hidden_audio_an_explicit_choice() {
     let plan = make_launch_plan(
         Some(47800),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.iso".into()),
             system: Some("xbox".into()),
             pc98_backend: None,
@@ -615,6 +638,7 @@ fn launch_plan_for_neogeo_aes_requires_software_list_media_and_aes_bios() {
     let plan = make_launch_plan(
         Some(47805),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/mslug2.zip".into()),
             system: Some("neogeo_aes".into()),
             pc98_backend: None,
@@ -641,6 +665,7 @@ fn launch_plan_for_neogeo_cd_requires_explicit_cue_and_cdz_bios() {
     let plan = make_launch_plan(
         Some(47805),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/disc.cue".into()),
             system: Some("neogeo_cd".into()),
             pc98_backend: None,
@@ -835,6 +860,7 @@ fn launch_plan_without_content_requests_only_the_content_path() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: None,
             system: None,
             pc98_backend: None,
@@ -861,6 +887,7 @@ fn launch_plan_with_ambiguous_media_preserves_content_and_requests_system() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(content_path.into()),
             system: None,
             pc98_backend: None,
@@ -896,6 +923,7 @@ fn launch_plan_blocks_a_cue_graph_that_escapes_its_directory() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(cue.display().to_string()),
             system: Some("saturn".into()),
             pc98_backend: None,
@@ -924,6 +952,7 @@ fn launch_plan_blocks_a_gdi_graph_that_escapes_its_directory() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(gdi.display().to_string()),
             system: Some("dc".into()),
             pc98_backend: None,
@@ -943,6 +972,7 @@ fn launch_plan_reviews_indirect_members_before_checking_their_files() {
     let first = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(cue.display().to_string()),
             system: Some("saturn".into()),
             pc98_backend: None,
@@ -967,6 +997,7 @@ fn launch_plan_reviews_indirect_members_before_checking_their_files() {
     let second = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(cue.display().to_string()),
             system: Some("saturn".into()),
             pc98_backend: None,
@@ -986,6 +1017,7 @@ fn launch_plan_with_explicit_system_and_no_content_preserves_system() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: None,
             system: Some("nes".into()),
             pc98_backend: None,
@@ -1013,6 +1045,7 @@ fn launch_plan_for_nes_uses_mesen2_and_nes_entry() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.nes".into()),
             system: None,
             pc98_backend: None,
@@ -1037,6 +1070,7 @@ fn launch_plan_for_gameboy_family_uses_mesen2_and_gb_entry() {
         let plan = make_launch_plan(
             Some(47804),
             &LaunchPlanArgs {
+                emulator: None,
                 content_path: Some(format!("/tmp/game.{ext}")),
                 system: None,
                 pc98_backend: None,
@@ -1077,6 +1111,7 @@ fn launch_plan_for_md_uses_mednafen_force_module() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.md".into()),
             system: None,
             pc98_backend: None,
@@ -1114,6 +1149,7 @@ fn launch_plan_blocks_missing_content_even_with_binary() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(missing.display().to_string()),
             system: None,
             pc98_backend: None,
@@ -1164,6 +1200,7 @@ fn launch_plan_ready_when_content_and_binary_exist() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(rom.display().to_string()),
             system: None,
             pc98_backend: None,
@@ -1215,6 +1252,7 @@ fn launch_plan_task_entry_blocker_overrides_local_readiness_and_preserves_replan
     let old = std::env::var_os("MESEN_BIN");
     std::env::set_var("MESEN_BIN", &fake_mesen);
     let args = LaunchPlanArgs {
+        emulator: None,
         content_path: Some(rom.display().to_string()),
         system: None,
         pc98_backend: None,
@@ -1266,6 +1304,7 @@ fn launch_plan_task_entry_blocker_overrides_local_readiness_and_preserves_replan
 #[test]
 fn launch_plan_preserved_failure_action_overrides_local_planning() {
     let args = LaunchPlanArgs {
+        emulator: None,
         content_path: Some("/tmp/game.sfc".into()),
         system: Some("snes".into()),
         pc98_backend: None,
@@ -1311,6 +1350,7 @@ fn launch_plan_for_explicit_md_accepts_ambiguous_bin() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.bin".into()),
             system: Some("genesis".into()),
             pc98_backend: None,
@@ -1337,6 +1377,7 @@ fn launch_plan_for_pc98_uses_repo_launcher_and_headless_contract() {
     let plan = make_launch_plan(
         Some(47803),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.hdi".into()),
             system: None,
             pc98_backend: None,
@@ -1389,6 +1430,7 @@ fn launch_plan_for_neogeo_mvs_uses_dedicated_adapter_without_zip_inference() {
     let plan = make_launch_plan(
         Some(47803),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/mslug.zip".into()),
             system: Some("neogeo_mvs".into()),
             pc98_backend: None,
@@ -1414,6 +1456,7 @@ fn launch_plan_for_n64_uses_native_mupen64plus_adapter() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/test.v64".into()),
             system: Some("n64".into()),
             pc98_backend: None,
@@ -1444,6 +1487,7 @@ fn launch_plan_for_saturn_declares_isolated_firmware_and_controlled_start() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/test.cue".into()),
             system: Some("saturn".into()),
             pc98_backend: None,
@@ -1483,6 +1527,7 @@ fn launch_plan_for_msx_uses_stock_openmsx_bridge() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/test.rom".into()),
             system: Some("msx".into()),
             pc98_backend: None,
@@ -1505,6 +1550,7 @@ fn launch_plan_for_real_msx_machine_requires_operator_firmware() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/test.dsk".into()),
             system: Some("msx2".into()),
             pc98_backend: None,
@@ -1523,6 +1569,7 @@ fn launch_plan_for_real_msx_machine_requires_operator_firmware() {
 #[test]
 fn pc98_display_selects_visible_mame_launch() {
     let args = LaunchArgs {
+        emulator: None,
         content_path: "/tmp/game.hdi".into(),
         content_path2: None,
         system: Some("pc98".into()),
@@ -1540,6 +1587,7 @@ fn pc98_display_selects_visible_mame_launch() {
     assert!(!pc98_headless(&args));
 
     let default_args = LaunchArgs {
+        emulator: None,
         display: None,
         ..args
     };
@@ -1674,6 +1722,7 @@ fn launch_plan_for_nds_uses_desmume_adapter_and_mcp_launcher() {
     let plan = make_launch_plan(
         Some(47804),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.nds".into()),
             system: None,
             pc98_backend: None,
@@ -1735,6 +1784,7 @@ fn launch_plan_for_psp_uses_ppsspp_adapter_and_mcp_launcher() {
     let plan = make_launch_plan(
         Some(47805),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some("/tmp/game.cso".into()),
             system: None,
             pc98_backend: None,
@@ -2218,6 +2268,7 @@ fn launch_recovers_retired_generation_and_cleans_exact_bridge_orphan() {
     let outcome = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2252,6 +2303,7 @@ fn launch_recovers_retired_generation_and_cleans_exact_bridge_orphan() {
     let refused = make_launch(
         &mut unverifiable_link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2279,6 +2331,7 @@ fn launch_recovers_retired_generation_and_cleans_exact_bridge_orphan() {
     let recovered = make_launch(
         &mut recovered_link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2333,6 +2386,7 @@ fn successful_launch_publishes_generation_and_refuses_duplicate() {
     drop(probe);
     let mut link = RuntimeLaunchLink::new(port);
     let mut args = LaunchArgs {
+        emulator: None,
         content_path: content.display().to_string(),
         content_path2: None,
         system: Some("snes".into()),
@@ -2505,6 +2559,7 @@ fn controlled_launch_publishes_only_after_a_frozen_ready_boundary() {
     let outcome = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2557,6 +2612,7 @@ fn controlled_launch_fails_closed_and_terminates_a_running_entry() {
     let outcome = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2677,6 +2733,7 @@ fn dolphin_audio_failure_terminates_only_the_owned_launch_and_aborts_admission()
     let outcome = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("gamecube".into()),
@@ -2834,6 +2891,7 @@ fn launch_refuses_missing_content_before_binary_resolution() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: missing.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2872,6 +2930,7 @@ fn launch_refuses_descriptor_members_without_plan_approval() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: cue.display().to_string(),
             content_path2: None,
             system: Some("saturn".into()),
@@ -2906,6 +2965,7 @@ fn launch_rejects_sound_for_unsupported_adapter_before_binary_resolution() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2941,6 +3001,7 @@ fn launch_rejects_pc98_sound_board_for_other_systems_before_binary_resolution() 
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("snes".into()),
@@ -2997,6 +3058,7 @@ fn controlled_launch_refuses_an_unsupported_adapter_before_spawn() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("n64".into()),
@@ -3032,6 +3094,7 @@ fn repeatable_profile_refuses_an_unadvertised_system_before_spawn() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: content.display().to_string(),
             content_path2: None,
             system: Some("nes".into()),
@@ -3086,6 +3149,7 @@ fn launch_refuses_missing_adapter_binary_with_precondition() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: disc.display().to_string(),
             content_path2: None,
             system: Some("dc".into()),
@@ -3164,6 +3228,7 @@ fn launch_refuses_missing_pc98_bridge_with_precondition() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: disk.display().to_string(),
             content_path2: None,
             system: Some("pc98".into()),
@@ -3218,6 +3283,7 @@ fn launch_refuses_occupied_port_before_spawn() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: "/tmp/game.md".into(),
             content_path2: None,
             system: Some("md".into()),
@@ -3296,6 +3362,7 @@ fn launch_refuses_when_this_session_already_connected() {
     let out = make_launch(
         &mut link,
         &LaunchArgs {
+            emulator: None,
             content_path: "/tmp/second.hdm".into(),
             content_path2: None,
             system: Some("pc98".into()),
@@ -3349,6 +3416,7 @@ fn pc98_backend_defaults_to_mame_even_when_hdi_geometry_recommends_np2kai() {
     let plan = make_launch_plan(
         Some(47821),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(hdi.display().to_string()),
             system: Some("pc98".into()),
             pc98_backend: None,
@@ -3373,6 +3441,7 @@ fn explicit_np2kai_selection_changes_only_the_pc98_backend() {
     let plan = make_launch_plan(
         Some(47822),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(hdi.display().to_string()),
             system: Some("pc98".into()),
             pc98_backend: Some(Pc98BackendArgs::Np2kai),
@@ -3390,6 +3459,7 @@ fn explicit_np2kai_selection_changes_only_the_pc98_backend() {
     let rejected = make_launch_plan(
         Some(47822),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(hdi.display().to_string()),
             system: Some("snes".into()),
             pc98_backend: Some(Pc98BackendArgs::Np2kai),
@@ -3412,6 +3482,7 @@ fn explicit_np2kai_selection_rejects_non_hdi_media_during_planning() {
     let plan = make_launch_plan(
         Some(47823),
         &LaunchPlanArgs {
+            emulator: None,
             content_path: Some(hdm.display().to_string()),
             system: Some("pc98".into()),
             pc98_backend: Some(Pc98BackendArgs::Np2kai),

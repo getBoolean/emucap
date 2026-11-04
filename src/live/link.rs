@@ -170,6 +170,7 @@ pub struct Capabilities {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FeatureCapabilities {
+    pub touch: Option<TouchCapability>,
     pub progress: Option<super::progress::ProgressCapability>,
     pub temporal_cancellation: Option<super::temporal::CancellationCapability>,
     pub memory_batch: Option<super::memory_batch::MemoryBatchCapability>,
@@ -219,6 +220,17 @@ impl FeatureCapabilities {
             ));
         }
         let advertised = |method: &str| methods.iter().any(|name| name == method);
+        let touch = hello
+            .get("touch_capability")
+            .map(|value| {
+                if !advertised("touch") {
+                    return Err(LinkError::Protocol(
+                        "touch_capability requires touch".into(),
+                    ));
+                }
+                TouchCapability::from_hello(value).map_err(LinkError::Protocol)
+            })
+            .transpose()?;
         let paired = |method: &str, field: &str| match (advertised(method), hello.get(field)) {
             (true, Some(value)) => Ok(Some(value)),
             (false, None) => Ok(None),
@@ -250,11 +262,93 @@ impl FeatureCapabilities {
             })
             .transpose()?;
         Ok(Self {
+            touch,
             progress,
             memory_batch,
             execution_speed,
             temporal_cancellation,
         })
+    }
+}
+
+/// Absolute single-contact input. A capability here provides persistent hold/release only;
+/// legacy NDS timed input remains governed by its existing wire contract.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TouchCapability {
+    pub ports: Vec<u64>,
+    pub width: u64,
+    pub height: u64,
+    pub coordinate_space: String,
+    pub contacts: u64,
+}
+
+impl TouchCapability {
+    pub fn from_hello(value: &Value) -> Result<Self, String> {
+        let capability: Self =
+            serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
+        if capability.ports != [0]
+            || !(1..=8192).contains(&capability.width)
+            || !(1..=8192).contains(&capability.height)
+            || capability.contacts != 1
+            || capability.coordinate_space != "touchscreen"
+        {
+            return Err("invalid absolute touchscreen capability".into());
+        }
+        Ok(capability)
+    }
+
+    pub fn validate_input(
+        &self,
+        port: u64,
+        x: Option<u64>,
+        y: Option<u64>,
+        frames: Option<u64>,
+        release: bool,
+    ) -> Result<(), String> {
+        if !self.ports.contains(&port) {
+            return Err("touch port is not advertised".into());
+        }
+        if release {
+            return Ok(());
+        }
+        if frames.is_some() {
+            return Err("this touchscreen supports persistent hold/release only".into());
+        }
+        if x.is_none_or(|x| x >= self.width) || y.is_none_or(|y| y >= self.height) {
+            return Err("touch requires coordinates inside the advertised touchscreen".into());
+        }
+        Ok(())
+    }
+}
+
+#[cfg(test)]
+mod touch_capability_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn absolute_touch_requires_valid_geometry_and_wire_support() {
+        let value = json!({"ports":[0],"width":320,"height":240,"coordinate_space":"touchscreen","contacts":1});
+        let hello = json!({"touch_capability":value});
+        assert!(
+            FeatureCapabilities::from_hello(&hello, &["touch".into()], &[])
+                .unwrap()
+                .touch
+                .is_some()
+        );
+        assert!(FeatureCapabilities::from_hello(&hello, &[], &[]).is_err());
+        for (key, bad) in [
+            ("ports", json!([0, 0])),
+            ("width", json!(0)),
+            ("height", json!(8193)),
+            ("contacts", json!(2)),
+            ("coordinate_space", json!("mouse")),
+        ] {
+            let mut invalid = value.clone();
+            invalid[key] = bad;
+            assert!(TouchCapability::from_hello(&invalid).is_err());
+        }
     }
 }
 

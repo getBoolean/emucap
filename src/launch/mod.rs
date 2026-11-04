@@ -14,6 +14,7 @@ use std::process::{Command, Stdio};
 pub mod desmume_nds;
 mod directory_replace;
 pub mod dolphin;
+pub mod emulator_family;
 pub mod flycast;
 pub mod mame;
 pub mod mame_neogeo;

@@ -28,6 +28,8 @@ mod tests;
 mod actions;
 #[path = "launch/controlled.rs"]
 mod controlled;
+#[path = "launch/emulator_family.rs"]
+mod emulator_family;
 #[path = "launch/mame_neogeo.rs"]
 mod mame_neogeo;
 #[path = "launch/media.rs"]

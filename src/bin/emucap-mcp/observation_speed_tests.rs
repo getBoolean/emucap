@@ -51,6 +51,7 @@ impl EmulatorLink for ScriptedLink {
 
 fn features() -> FeatureCapabilities {
     FeatureCapabilities {
+        touch: None,
         progress: None,
         temporal_cancellation: None,
         memory_batch: Some(

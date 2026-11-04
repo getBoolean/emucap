@@ -519,10 +519,10 @@ pub(crate) struct DragPointerArgs {
 pub(crate) struct TouchArgs {
     #[serde(default)]
     pub(crate) port: u64,
-    /// Lower touchscreen X coordinate (0-255). Required unless releasing.
+    /// Absolute touchscreen X coordinate within status.touch_capability.width. Required unless releasing.
     #[serde(default)]
     pub(crate) x: Option<u64>,
-    /// Lower touchscreen Y coordinate (0-191). Required unless releasing.
+    /// Absolute touchscreen Y coordinate within status.touch_capability.height. Required unless releasing.
     #[serde(default)]
     pub(crate) y: Option<u64>,
     /// Optional tap duration. When present, return after the frames have advanced
@@ -539,9 +539,9 @@ pub(crate) struct TouchArgs {
 pub(crate) struct HoldTouchArgs {
     #[serde(default)]
     pub(crate) port: u64,
-    /// Lower touchscreen X coordinate (0-255).
+    /// Absolute touchscreen X coordinate within the active runtime's advertised bounds.
     pub(crate) x: u64,
-    /// Lower touchscreen Y coordinate (0-191).
+    /// Absolute touchscreen Y coordinate within the active runtime's advertised bounds.
     pub(crate) y: u64,
 }
 
@@ -557,14 +557,23 @@ pub(crate) struct ReleaseTouchArgs {
 pub(crate) struct PulseTouchArgs {
     #[serde(default)]
     pub(crate) port: u64,
-    /// Lower touchscreen X coordinate (0-255).
+    /// Absolute touchscreen X coordinate within the active runtime's advertised bounds.
     pub(crate) x: u64,
-    /// Lower touchscreen Y coordinate (0-191).
+    /// Absolute touchscreen Y coordinate within the active runtime's advertised bounds.
     pub(crate) y: u64,
     /// Frames for which to hold the touch before releasing it. This operation
     /// leaves guest execution running.
     #[serde(deserialize_with = "deser_input_frames")]
     pub(crate) frames: u64,
+}
+
+#[derive(Deserialize, JsonSchema)]
+#[serde(deny_unknown_fields)]
+pub(crate) struct WaitRunningFramesArgs {
+    /// Native progress events to observe. The active capability defines the event domain and bound.
+    pub(crate) frames: u64,
+    /// Maximum observation time in milliseconds, bounded by the active progress capability.
+    pub(crate) timeout_ms: u64,
 }
 
 #[derive(Deserialize, JsonSchema)]
@@ -971,6 +980,9 @@ pub(crate) struct AnalysisArgs {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LaunchPlanArgs {
+    /// Explicit build, fork, core and configuration selection for 3DS/Switch family adapters.
+    #[serde(default)]
+    pub(crate) emulator: Option<emucap::launch::emulator_family::EmulatorOptions>,
     /// Writable raw CompactFlash image for NDS homebrew, attached with DeSmuME's
     /// MPCF DLDI driver. Omit to keep the default NDS launch without card storage.
     #[serde(default)]
@@ -996,6 +1008,9 @@ pub(crate) struct LaunchPlanArgs {
 #[derive(Debug, Clone, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LaunchArgs {
+    /// Explicit emulator-family build selection, as reviewed by launch_plan.
+    #[serde(default)]
+    pub(crate) emulator: Option<emucap::launch::emulator_family::EmulatorOptions>,
     /// Writable raw CompactFlash image for NDS homebrew. Validated before any
     /// managed generation is replaced; the caller owns the image's lifetime.
     #[serde(default)]

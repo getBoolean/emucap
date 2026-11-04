@@ -10,6 +10,27 @@ use serde_json::{Map, Value};
 
 pub(crate) use emucap::live::controller_input::validate_controller_axes;
 
+pub(crate) fn validate_touch(
+    status: &Value,
+    port: u64,
+    x: Option<u64>,
+    y: Option<u64>,
+    frames: Option<u64>,
+    release: bool,
+) -> Result<(), String> {
+    if let Some(value) = status.get("touch_capability") {
+        return emucap::live::link::TouchCapability::from_hello(value)?
+            .validate_input(port, x, y, frames, release);
+    }
+    if port != 0 {
+        return Err("legacy touchscreen supports only port zero".into());
+    }
+    if !release && (x.is_none_or(|x| x >= 256) || y.is_none_or(|y| y >= 192)) {
+        return Err("legacy touchscreen requires coordinates inside 256x192".into());
+    }
+    Ok(())
+}
+
 pub(super) fn describe(status: &Value, operations: &mut Map<String, Value>) {
     add::<ReadInputPollsArgs>(operations,status,"read_input_polls","Read bounded controller-response history after an exclusive sequence cursor. Check generation and dropped_before_cursor before joining records.");
     add::<InputArgs>(
@@ -91,6 +112,16 @@ pub(crate) async fn execute(
         "hold_touch" => {
             match analysis_surface::parse_arguments::<HoldTouchArgs>(operation, arguments) {
                 Ok(values) => {
+                    if let Err(error) = validate_touch(
+                        status,
+                        values.port,
+                        Some(values.x),
+                        Some(values.y),
+                        None,
+                        false,
+                    ) {
+                        return invalid_request_result(error);
+                    }
                     server
                         .touch(Parameters(TouchArgs {
                             port: values.port,
@@ -107,6 +138,10 @@ pub(crate) async fn execute(
         "release_touch" => {
             match analysis_surface::parse_arguments::<ReleaseTouchArgs>(operation, arguments) {
                 Ok(values) => {
+                    if let Err(error) = validate_touch(status, values.port, None, None, None, true)
+                    {
+                        return invalid_request_result(error);
+                    }
                     server
                         .touch(Parameters(TouchArgs {
                             port: values.port,
@@ -123,6 +158,16 @@ pub(crate) async fn execute(
         "pulse_touch_while_running" => {
             match analysis_surface::parse_arguments::<PulseTouchArgs>(operation, arguments) {
                 Ok(values) => {
+                    if let Err(error) = validate_touch(
+                        status,
+                        values.port,
+                        Some(values.x),
+                        Some(values.y),
+                        Some(values.frames),
+                        false,
+                    ) {
+                        return invalid_request_result(error);
+                    }
                     server
                         .touch(Parameters(TouchArgs {
                             port: values.port,

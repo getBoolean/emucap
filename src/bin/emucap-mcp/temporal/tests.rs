@@ -94,6 +94,85 @@ pub(crate) async fn request(server: Emucap, name: &str, arguments: Value) -> Val
     response["result"].clone()
 }
 
+struct ObservedProgress {
+    caps: Capabilities,
+    waits: Arc<Mutex<Vec<Value>>>,
+}
+
+impl EmulatorLink for ObservedProgress {
+    fn capabilities(&self) -> &Capabilities {
+        &self.caps
+    }
+    fn attachment_id(&self) -> Option<&str> {
+        Some("wait-attachment")
+    }
+    fn call(&mut self, method: &str, _: Value) -> Result<Value, LinkError> {
+        assert_eq!(method, "status");
+        Ok(json!({"connected":true,"state":"running"}))
+    }
+    fn call_with_progress(
+        &mut self,
+        method: &str,
+        params: Value,
+        _: &mut ProgressObserver<'_>,
+        _: &ProgressCallControl,
+    ) -> Result<Value, LinkError> {
+        assert_eq!(method, "wait_for_running_frames");
+        self.waits.lock().unwrap().push(params);
+        Ok(
+            json!({"status":"completed","domain":"native_render_present","requested":10,
+            "start":20,"end":32,"observed":12,"overshoot":2,"state":"running"}),
+        )
+    }
+}
+
+#[tokio::test]
+async fn routed_running_wait_rejects_stale_revision_and_reports_native_overshoot() {
+    let mut caps = Capabilities::empty();
+    caps.protocol_version = 1;
+    caps.methods = ["status", "wait_for_running_frames", "cancel_operation"]
+        .map(String::from)
+        .to_vec();
+    caps.identity.launch_id = Some("launch-wait".into());
+    caps.features.progress = Some(emucap::live::progress::ProgressCapability {
+        domain: "native_render_present".into(),
+        max_count: 50,
+        max_timeout_ms: 1000,
+        overshoot: true,
+        running_only: true,
+    });
+    caps.features.temporal_cancellation = Some(CancellationCapability {
+        methods: vec!["wait_for_running_frames".into()],
+        control_service_ms: 25,
+        stop_host_ms: 500,
+    });
+    caps.contracts = emucap::contracts::advertisement_from_hello(
+        &json!({"contracts":emucap::contracts::advertisement_value(&[])}),
+    );
+    let waits = Arc::new(Mutex::new(vec![]));
+    let server = Emucap::new(Arc::new(Mutex::new(ObservedProgress {
+        caps,
+        waits: waits.clone(),
+    })));
+    let status = server.current_surface_status().unwrap();
+    let args = json!({"operation":"wait_for_running_frames","known_capability_revision":"stale",
+        "arguments":{"frames":10,"timeout_ms":1000}});
+    let mut rpc = Rpc::new(server).await;
+    rpc.call(2, "debug", args.clone()).await;
+    let rejected = rpc.response().await["result"].clone();
+    assert_eq!(rejected["isError"], true);
+    assert_eq!(rejected["structuredContent"]["error"]["code"], "bad_state");
+    assert!(waits.lock().unwrap().is_empty());
+    let mut valid = args;
+    valid["known_capability_revision"] = status["capability_revision"].clone();
+    rpc.call(3, "debug", valid).await;
+    let completed = rpc.response().await["result"].clone();
+    assert_ne!(completed["isError"], true, "{completed}");
+    assert_eq!(completed["structuredContent"]["observed"], 12);
+    assert_eq!(waits.lock().unwrap().len(), 1);
+    rpc.close().await;
+}
+
 struct Signals {
     started: Notify,
     cancelled: Notify,

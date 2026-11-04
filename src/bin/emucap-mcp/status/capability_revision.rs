@@ -13,6 +13,7 @@ pub(super) const CAPABILITY_FIELDS: &[&str] = &[
     "input_axes",
     "touch_capability",
     "progress_capability",
+    "temporal_cancellation_capability",
     "input_poll_capability",
     "host_features",
     "contracts",

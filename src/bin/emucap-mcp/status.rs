@@ -77,6 +77,19 @@ pub(crate) fn enrich_status_value(
             obj.insert("input_buttons".into(), hint);
         }
     }
+    let persistent_touch = obj.contains_key("touch_capability");
+    let progress_ready = obj
+        .get("progress_capability")
+        .is_some_and(|value| emucap::live::progress::ProgressCapability::from_hello(value).is_ok())
+        && obj
+            .get("temporal_cancellation_capability")
+            .and_then(|value| value.get("methods"))
+            .and_then(serde_json::Value::as_array)
+            .is_some_and(|methods| {
+                methods
+                    .iter()
+                    .any(|method| method == "wait_for_running_frames")
+            });
     if let Some(status_methods) = obj.get("methods").and_then(serde_json::Value::as_array) {
         let status_methods = status_methods
             .iter()
@@ -85,12 +98,20 @@ pub(crate) fn enrich_status_value(
             .collect::<Vec<_>>();
         obj.insert(
             "methods".into(),
-            serde_json::json!(public_method_names(&status_methods)),
+            serde_json::json!(public_method_names(
+                &status_methods,
+                persistent_touch,
+                progress_ready
+            )),
         );
     } else if !methods.is_empty() {
         obj.insert(
             "methods".into(),
-            serde_json::json!(public_method_names(methods)),
+            serde_json::json!(public_method_names(
+                methods,
+                persistent_touch,
+                progress_ready
+            )),
         );
     }
     if !obj.contains_key("memory_types") && !memory_types.is_empty() {
@@ -191,7 +212,11 @@ pub(crate) fn enrich_recording_capability(
     }
 }
 
-fn public_method_names(methods: &[String]) -> Vec<String> {
+fn public_method_names(
+    methods: &[String],
+    persistent_touch: bool,
+    progress_ready: bool,
+) -> Vec<String> {
     let mut normalized = Vec::with_capacity(methods.len());
     let push_unique = |normalized: &mut Vec<String>, method: &str| {
         if !normalized.iter().any(|known| known == method) {
@@ -201,10 +226,15 @@ fn public_method_names(methods: &[String]) -> Vec<String> {
     for method in methods {
         match method.as_str() {
             "run_frames" => {}
+            "wait_for_running_frames" if !progress_ready => {}
+            "pulse_touch_while_running" if persistent_touch => {}
             "press_buttons" => push_unique(&mut normalized, "pulse_while_running"),
             "touch" => {
-                for public_name in ["hold_touch", "release_touch", "pulse_touch_while_running"] {
+                for public_name in ["hold_touch", "release_touch"] {
                     push_unique(&mut normalized, public_name);
+                }
+                if !persistent_touch {
+                    push_unique(&mut normalized, "pulse_touch_while_running");
                 }
             }
             "step" | "step_instructions" | "step_input_polls" => {
@@ -490,6 +520,19 @@ pub(crate) fn runtime_paths(port: Option<u16>) -> serde_json::Value {
             "dolphin": {
                 "build": abs_path_json(&root, &["adapters", "dolphin", if cfg!(windows) { "build.ps1" } else { "build.sh" }]),
             },
+            "azahar": {
+                "build": abs_path_json(&root, &["adapters", "azahar", if cfg!(windows) { "build.ps1" } else { "build.sh" }]),
+                "host_binary": abs_path_json(&root, &["target", "release", if cfg!(windows) {"emucap-azahar.exe"} else {"emucap-azahar"}]),
+                "guide": abs_path_json(&root, &["adapters", "azahar", "README.md"]),
+                "core_env":"EMUCAP_AZAHAR_CORE",
+                "python_env":"EMUCAP_PYTHON"
+            },
+            "eden_family": {
+                "build": abs_path_json(&root, &["adapters", "eden-family", if cfg!(windows) { "build.ps1" } else { "build.sh" }]),
+                "guide": abs_path_json(&root, &["adapters", "eden-family", "README.md"]),
+                "binary_env":"EMUCAP_EDEN_BIN",
+                "forks":["eden","eden-nx2","eglantine"]
+            },
             "xemu": {
                 "build": abs_path_json(&root, &["adapters", "xemu", "build.sh"]),
                 "bridge_binary": abs_path_json(&root, &["target", "release", if cfg!(windows) { "emucap-xemu-bridge.exe" } else { "emucap-xemu-bridge" }]),
@@ -501,6 +544,21 @@ pub(crate) fn runtime_paths(port: Option<u16>) -> serde_json::Value {
 
 fn build_supported_systems_value() -> serde_json::Value {
     serde_json::json!([
+        {
+            "system":"3ds","aliases":["ctr","n3ds","new3ds","azahar"],"adapter":"azahar",
+            "content":["3dsx"],"qualification":"experimental",
+            "notes":"Pinned software Azahar libretro core and emucap-azahar supervisor required. Live status determines controls; no Luma custom SVC or Dart runtime support is implied."
+        },
+        {
+            "system":"switch","aliases":["nx","nintendo-switch"],"adapter":"eden_family",
+            "content":["nro","nso","loose ExeFS main"],"qualification":"experimental",
+            "notes":"Select an explicit compatible Eden-family build/profile. Source-patched SDL bridge required; stock keyboard replay is not emucap control."
+        },
+        {
+            "system":"switch2","aliases":["nx2","switch-2","nintendo-switch-2"],"adapter":"eden_family",
+            "content":["loose ExeFS main"],"qualification":"experimental; not live-qualified",
+            "notes":"Requires an explicitly selected Eden-NX2 experimental branch or Djihads80/Eglantine build. Source implementation is not evidence of guest compatibility; lawful fixture proof is recorded separately."
+        },
         {
             "system": "snes",
             "adapter": "mesen2",

@@ -13,12 +13,13 @@ use emucap::live::tools::ToolOutput;
 use crate::args::{
     BreakOnResetArgs, EmptyArgs, ExecutionSpeedArgs, FindPatternArgs, GetTraceArgs, PathArgs,
     ProbeArgs, RecordWindowArgs, ResolveTileArgs, RoutedOperationArgs, SetLayerEnableArgs,
-    SetTraceArgs, WatchRegisterArgs,
+    SetTraceArgs, WaitRunningFramesArgs, WatchRegisterArgs,
 };
 use crate::{analysis_surface, invalid_request_result, recording, tool_output_result, Emucap};
 
 const OPERATIONS: &[&str] = &[
     "execution_speed",
+    "wait_for_running_frames",
     "set_input",
     "read_input_polls",
     "hold_touch",
@@ -78,6 +79,8 @@ fn add<T: schemars::JsonSchema>(
 pub(crate) fn describe(status: &Value) -> Value {
     let mut operations = Map::new();
     input::describe(status, &mut operations);
+    add::<WaitRunningFramesArgs>(&mut operations, status, "wait_for_running_frames",
+        "Observe bounded native progress while the guest is already running. Read progress_capability for the event domain and limits; completion reports actual progress and overshoot. Does not pause, resume or change inputs, and does not provide exact stepping.");
     add::<ExecutionSpeedArgs>(&mut operations, status, "execution_speed",
         "Query host pacing with {}. Set limited with an advertised percent (100=normal, 50=half, 200=double), or unlimited with mode only. Check the returned effective policy and execution state. Rates and limits are in status.execution_speed_capability.");
     add::<EmptyArgs>(
@@ -183,6 +186,8 @@ pub(crate) fn describe(status: &Value) -> Value {
         "capability_revision": status.get("capability_revision"),
         "input_buttons": status.get("input_buttons"),
         "input_axes": status.get("input_axes"),
+        "touch_capability": status.get("touch_capability"),
+        "progress_capability": status.get("progress_capability"),
         "operations": operations,
         "next_action": next_action
     })
@@ -229,6 +234,28 @@ pub(crate) async fn execute(
     }
     let operation = arguments.operation;
     match operation.as_str() {
+        "wait_for_running_frames" => {
+            match analysis_surface::parse_arguments::<WaitRunningFramesArgs>(
+                &operation,
+                arguments.arguments,
+            ) {
+                Ok(args) => {
+                    crate::temporal::execute(
+                        server.link.clone(),
+                        crate::temporal::Operation::Wait {
+                            args,
+                            revision: status["capability_revision"]
+                                .as_str()
+                                .unwrap_or_default()
+                                .into(),
+                        },
+                        context,
+                    )
+                    .await
+                }
+                Err(error) => invalid_request_result(error),
+            }
+        }
         "read_input_polls"
         | "set_input"
         | "hold_touch"

@@ -1,6 +1,6 @@
 use crate::request_ownership::{Admission, CancelOnDrop};
 use crate::{
-    args::{StepArgs, TapArgs},
+    args::{StepArgs, TapArgs, WaitRunningFramesArgs},
     error_result, link_error_result, tool_output_result, SharedLink,
 };
 use emucap::live::{
@@ -16,10 +16,15 @@ use std::sync::TryLockError;
 pub enum Operation {
     Step(StepArgs),
     Tap(TapArgs),
+    Wait {
+        args: WaitRunningFramesArgs,
+        revision: String,
+    },
 }
 impl Operation {
     fn method(&self) -> &'static str {
         match self {
+            Self::Wait { .. } => emucap::live::progress::METHOD,
             Self::Step(args) => args.unit.capability_method(),
             Self::Tap(args)
                 if args
@@ -43,6 +48,35 @@ impl Operation {
         crate::ensure_capabilities_loaded(link)?;
         if cancellation.is_cancelled() {
             return Err(LinkError::Cancelled);
+        }
+        if let Self::Wait { args, revision } = self {
+            let mut observation = crate::status::observe_control_state(link)?;
+            let current = crate::status::apply_capability_revision(&mut observation.status, None);
+            if current != revision
+                || !crate::debug_surface::advertised(
+                    &observation.status,
+                    emucap::live::progress::METHOD,
+                )
+            {
+                return Err(LinkError::Emulator {
+                    kind: "bad_state".into(),
+                    message: "progress capability revision changed; read status and describe again"
+                        .into(),
+                });
+            }
+            let owner = link
+                .attachment_id()
+                .ok_or_else(|| {
+                    LinkError::Protocol("progress wait attachment identity unavailable".into())
+                })?
+                .to_owned();
+            return tools::wait_for_running_frames(
+                link,
+                args.frames,
+                args.timeout_ms,
+                cancellation,
+                &owner,
+            );
         }
         if let Self::Tap(args) = &self {
             args.resolved_timing()?;
@@ -102,6 +136,7 @@ impl Operation {
                 let (unit, press, after) = a.resolved_timing()?;
                 tools::tap_axes_in_unit(link, a.port, &a.buttons, &a.axes, press, after, unit)
             }
+            (Self::Wait { .. }, _) => unreachable!("wait handled before exact temporal operations"),
         }
     }
 }

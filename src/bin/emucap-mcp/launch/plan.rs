@@ -422,6 +422,8 @@ pub(super) fn adapter_binary_precondition_for(
         "ppsspp" => ppsspp_binary_precondition(root),
         "pcsx2" => pcsx2_binary_precondition(root),
         "xemu" => super::xemu::precondition(root),
+        "azahar" => super::emulator_family::precondition(root, "3ds", None),
+        "eden_family" => super::emulator_family::precondition(root, "switch", None),
         _ => serde_json::Value::Null,
     }
 }
@@ -517,6 +519,7 @@ pub(super) fn build_required_precondition(
                 .as_str()
                 .unwrap_or("adapters/xemu/build.sh")
         )),
+        "azahar" | "eden_family" => serde_json::json!("Build the selected pinned adapter, supply its matching emucap-emulator-build.json, and review the adapter README prerequisites. Explicit selection uses the emulator launch object."),
         _ => serde_json::Value::Null,
     }
 }
@@ -706,6 +709,12 @@ pub(super) fn infer_system(
     }
 
     match ext_lower(path).as_deref() {
+        Some("3dsx") => {
+            serde_json::json!({"system":"3ds","confidence":"extension","reason":"CTR homebrew extension","needs_user_input":false})
+        }
+        Some("nro" | "nso") => {
+            serde_json::json!({"system":null,"confidence":"ambiguous_media","reason":"Switch-family homebrew requires an explicit target system","needs_user_input":true,"required_user_input":"Specify switch or switch2 explicitly.","candidates":["switch","switch2"]})
+        }
         Some("sfc" | "smc") => serde_json::json!({
             "system": "snes",
             "confidence": "extension",
@@ -871,6 +880,33 @@ pub(super) fn adapter_log_path(
 
 pub(crate) fn make_launch_plan(port: Option<u16>, args: &LaunchPlanArgs) -> serde_json::Value {
     let mut plan = make_launch_plan_inner(port, args);
+    if let Some(selection) = &args.emulator {
+        fn preserve(value: &mut serde_json::Value, selection: &serde_json::Value) {
+            match value {
+                serde_json::Value::Object(object) => {
+                    if object.get("tool").and_then(serde_json::Value::as_str) == Some("launch_plan")
+                    {
+                        if let Some(arguments) = object
+                            .get_mut("arguments")
+                            .and_then(serde_json::Value::as_object_mut)
+                        {
+                            arguments.insert("emulator".into(), selection.clone());
+                        }
+                    }
+                    for value in object.values_mut() {
+                        preserve(value, selection);
+                    }
+                }
+                serde_json::Value::Array(values) => {
+                    for value in values {
+                        preserve(value, selection);
+                    }
+                }
+                _ => (),
+            }
+        }
+        preserve(&mut plan, &serde_json::json!(selection));
+    }
     if plan["next_action"]["then_call"]["tool"] == "launch_plan" {
         if let Some(image) = args.nds_storage_image.as_deref() {
             plan["next_action"]["then_call"]["arguments"]["nds_storage_image"] =
@@ -946,11 +982,17 @@ fn make_launch_plan_inner(port: Option<u16>, args: &LaunchPlanArgs) -> serde_jso
         });
     }
     let (adapter, force_module) = adapter_for_system_and_pc98_backend(system, args.pc98_backend);
+    if args.emulator.is_some() && !super::emulator_family::is_family(adapter) {
+        return serde_json::json!({"ok":false,"ready_to_launch":false,"reason":"emulator selection applies only to 3ds, switch and switch2"});
+    }
     let mut preferred_launcher_args = serde_json::json!({
         "content_path": content_path,
         "system": system,
         "name": format!("{system}_session"),
     });
+    if let Some(selection) = &args.emulator {
+        preferred_launcher_args["emulator"] = serde_json::json!(selection);
+    }
     if let Some(image) = args.nds_storage_image.as_deref() {
         preferred_launcher_args["nds_storage_image"] = serde_json::json!(image);
     }
@@ -1015,7 +1057,11 @@ fn make_launch_plan_inner(port: Option<u16>, args: &LaunchPlanArgs) -> serde_jso
 
     // 선행조건(ready_to_launch=true는 *인자 검증*만 — 빌드·BIOS는 별도다. 미충족 시 launcher가
     // binary-not-found나 BIOS-missing으로 실패하므로 미리 알린다).
-    let adapter_binary = adapter_binary_precondition(adapter, &root);
+    let adapter_binary = if super::emulator_family::is_family(adapter) {
+        super::emulator_family::precondition(&root, system, args.emulator.as_ref())
+    } else {
+        adapter_binary_precondition(adapter, &root)
+    };
     let adapter_built = if adapter == "mednafen" {
         serde_json::json!(adapter_binary["available"].as_bool().unwrap_or(false))
     } else {
