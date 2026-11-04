@@ -34,6 +34,31 @@ identity; it is not a build pass. Existing source edits beyond the exact patch
 are rejected, never reset. Defaults place `eden-sdl[.exe]` and the matched
 `emucap-emulator-build.json` under `build/<fork>/bin/`.
 
+Use Windows headers compatible with the selected upstream dependencies. The
+installed MinGW-w64 10 headers fail Xbyak's `EfficiencyClass` reference; a
+task-local GCC 16.2 / MinGW-w64 14 compiler passes the isolated dependency probe.
+Select a separate compiler with `--cmake-arg=-DCMAKE_C_COMPILER=...` and
+`--cmake-arg=-DCMAKE_CXX_COMPILER=...` in a fresh output directory. Current local
+builds use `--cmake-arg=-DENABLE_LIBUSB=OFF` to omit physical USB adapters;
+the bridge uses native virtual input. Consult the qualification report for full
+build outcomes rather than treating that compiler probe as a linked build.
+Windows GNU builds also disable httplib's optional async DNS resolver: its
+`GetAddrInfoExCancel` call is unavailable in the tested MinGW headers. The bridge
+connects to a numeric loopback address and does not use that resolver.
+Windows GNU builds use windres temporary files to avoid the Windows command-line
+limit. The builder copies runtime DLLs from the selected CMake compiler and checks
+the staged executable's compiled profile before publishing its sidecar. Keep those
+DLLs with the executable when moving it to another directory.
+
+With MSYS Perl/make, use forward slashes in explicit `CC`/`CXX` paths. If a
+cached configure reports `CPM: SOURCE_DIR is required`, select its exact fetched
+OpenSSL source using `--cmake-arg=-DOPENSSL_SOURCE=/absolute/openssl-source`.
+Changing the compiler also requires regenerating OpenSSL's cached configuration.
+A separately built matching OpenSSL can instead use the upstream
+`--cmake-arg=-DOpenSSL_FORCE_SYSTEM=ON` and explicit `OPENSSL_ROOT_DIR`,
+`OPENSSL_INCLUDE_DIR`, `OPENSSL_CRYPTO_LIBRARY` and `OPENSSL_SSL_LIBRARY` arguments.
+Keep its source/version, compiler and library hashes with the build evidence.
+
 Compatible custom forks use `--profile source-descriptor.json --patch integration.patch`.
 The descriptor supplies fork, repository, full revision, systems and renderers;
 adapt the integration hooks for that exact source. Reuse `native/` instead of
@@ -75,6 +100,11 @@ input objects on their owner thread. Empty buttons/axes release controller
 state; `release_touch` releases touch independently. Broker disconnect clears
 both. Running waits have keyed cancellation and preserve unrelated persistent
 input. Exact frame stepping and timed `tap` are absent.
+
+Touch uses logical 1280x720 coordinates within the inclusive advertised rectangle
+`x=15..1264, y=15..704`. Native HID clamps positions outside that sensor area, so
+the bridge rejects them before changing input. Read `touch_capability.bounds`
+instead of assuming every coordinate within the logical screen is accepted.
 
 Managed mode fixes one connected Pro controller at native Player1/virtual port0,
 undocked mode and enabled touchscreen. It clears primary keyboard/SDL/motion

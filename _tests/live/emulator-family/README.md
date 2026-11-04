@@ -30,9 +30,16 @@ logs, full capability/build/root/content readbacks, guest input observations,
 progress terminal results and managed stop. The witness rejects an absent magic,
 wrong target identity, stalled guest counter, controller/touch mapping mismatch,
 unreleased input, or guest counter changing while paused. It does not claim exact
-stepping. Active wait cancellation, capture timeout recovery and disconnect input
-cleanup require additional live witnesses; synthetic endpoint tests cover the
-protocol path but do not replace them.
+stepping. The harness also cancels an admitted running wait, checks that unrelated
+held input survives, and rejects a mismatched-profile replacement without losing
+the live generation. Capture timeout recovery and disconnect input cleanup require
+additional live witnesses; synthetic endpoint tests do not replace them.
+
+Switch witnesses require the native HID rectangle `x=15..1264, y=15..704` within
+the logical 1280x720 touchscreen. They test those supported corners and center,
+then reject an unsupported (0,0) request and verify the held touch did not change.
+Azahar retains the complete 320x240 touch area. These bounds are protocol data,
+not a coordinate tolerance added to hide native clamping.
 
 Hidden GPU tests still require a working display/driver. On Linux, run under
 `xvfb-run -a` with an installed Mesa Vulkan/OpenGL driver. Record the exact driver,
@@ -50,3 +57,8 @@ loader-data test can qualify a source path, not guest execution or game compatib
 Loose ExeFS must go through reviewed indirect-media admission before launch;
 this simple NRO/3DSX harness currently reports that additional prerequisite as blocked.
 No commercial assets or guest-security workaround may substitute for it.
+
+The later [Ozone/libnx-ounce investigation](../../../docs/switch2-ozone-research.md)
+built an open Ounce library and ELF/NSO probe. That probe lacks validated Switch 2
+NPDM metadata and is not an admissible live fixture. The existing `build_fixture.py`
+continues to build only the qualified CTR and Switch 1 fixture formats.

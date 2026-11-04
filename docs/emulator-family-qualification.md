@@ -11,9 +11,9 @@ The requested Eglantine source is **Djihads80/Eglantine**, branch `nx2`, revisio
 | Profile | Source target | Implemented bridge scope | Live status |
 | --- | --- | --- | --- |
 | Azahar | `9c38437daad90a2f05f55a047d04d4073a476456` | Supervised libretro ABI, combined software capture, persistent digital/analog/touch, native profile/root attestation, running progress waits; no pause | Windows x86-64 software: lawful CTR witness passed within scope below |
-| Eden | `5df599128d6828fa0e42968909da848c255d22b1` | Shared SDL producer, input/touch, GPU capture, render-progress wait, managed profile/root binding | Unqualified pending linked emulator and legal fixture run |
-| Eden-NX2 | `eden-nx2`, `50fa86bbbc403ad565eb44fcc281f16f77c69e15` | Same protocol, source-specific integration; concrete Switch 2 loader/system paths | Switch and Switch 2 independently unqualified |
-| Eglantine | Djihads80 `nx2`, `c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4` | Same protocol and explicit source pin; experimental Switch 2 target | Switch and Switch 2 independently unqualified |
+| Eden | `5df599128d6828fa0e42968909da848c255d22b1` | Shared SDL producer, input/touch, GPU capture, render-progress wait, managed profile/root binding | Windows x86-64 hidden Vulkan: lawful Switch 1 witness passed |
+| Eden-NX2 | `eden-nx2`, `50fa86bbbc403ad565eb44fcc281f16f77c69e15` | Same protocol, source-specific integration; concrete Switch 2 loader/system paths | Windows x86-64 hidden Vulkan: Switch 1 witness passed; Switch 2 unqualified |
+| Eglantine | Djihads80 `nx2`, `c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4` | Same protocol and explicit source pin; experimental Switch 2 target | Windows x86-64 hidden Vulkan: Switch 1 witness passed; Switch 2 unqualified |
 
 Upstream Eglantine calls itself very experimental and publishes game compatibility
 claims in its [README](https://github.com/Djihads80/Eglantine). Those are upstream
@@ -87,28 +87,96 @@ measurement on CPython 3.12 fell from a median 139.868 ms to 0.934 ms after raw
 buffer copying replaced eager pixel conversion; PNG encoding occurs on capture.
 This is callback cost, not an emulator FPS measurement.
 
+Run `emucap-live-azahar-006` repeated the expanded witness using the extracted
+Windows Core package from clean source commit `6be8911`, including its packaged
+worker resources. It passed the same pixel/input/touch/replacement/stop checks;
+active-wait cancellation recovered control in 0.203 seconds. Package startup and
+live guest evidence therefore remain separately reproducible.
+
 ### Eden-family build boundary
 
 All three maintained pins pass source patch application, matching CMake
 generation and strict SDL/glue object compilation against their own generated
 headers. The shared producer also compiles and passes synthetic native tests on
-Windows and WSL/Linux. These results do not establish a linked emulator.
+Windows and WSL/Linux. Full Windows GNU executables subsequently linked for all
+three pins, and each native `--emucap-build-profile` exactly matched its sidecar.
 GCC12 warnings in unchanged pinned source were reproduced against the baseline;
 the full Eden build uses the supported `ENABLE_WERROR=OFF` option with diagnostics
-retained, bounded jobs and a matched same-volume MSYS Perl/make pair. Full build
-results and any live Switch witness remain separate from these object checks.
+retained, bounded jobs and a matched same-volume MSYS Perl/make pair. The build
+recipe recognizes the upstream `eden-cli.exe` output and stages the selected
+compiler's runtime DLLs beside `eden-sdl.exe`, independently of an older GCC on PATH.
+It queries the staged executable before publishing the final sidecar.
+
+The installed MinGW-w64 10 headers fail an unmodified Xbyak 7.40.1 probe because
+`PROCESSOR_RELATIONSHIP::EfficiencyClass` is absent. A task-local WinLibs GCC 16.2 /
+MinGW-w64 14 toolchain passes that same probe. Native retries select that compiler
+explicitly; they also disable optional physical libusb input and retain virtual
+controller/touch support. Neither the machine toolchain nor global PATH is changed.
+The Windows GNU recipe disables httplib's optional async DNS resolver after its
+unmodified header independently reproduced a missing `GetAddrInfoExCancel` error;
+the fallback header probe passes. This setting does not add a network capability
+to the emulator bridge, which connects to numeric loopback addresses.
+
+### Windows Eden-family live witnesses
+
+The original libnx Switch 1 fixture passed with all three source-patched builds
+on Windows 11 x86-64, AMD Radeon RX 7900 XT, Vulkan 1.4.359 / AMD driver 2.0.416,
+and hidden SDL windows. These are separate fork/build cells:
+
+| Fork | Local evidence directory | Native executable SHA-256 | Cancellation recovery |
+| --- | --- | --- | --- |
+| Eden | `emucap-live-eden-002` | `161caa24d98c0fe2123595c5fdc36f32b3f095cbb37caf12c5aef4413616a8c8` | 0.094 s |
+| Eden-NX2 | `emucap-live-eden-nx2-003` | `2781c3d0fce489cce2f95edd3c881f8892c3a2e68e1c870e17e0b82ab656cb09` | 0.188 s |
+| Eglantine | `emucap-live-eglantine-002` | `6e06baa18c86078868dde09fb84552470e5784276e79ffe939655df92ea4e158` | 0.109 s |
+
+Each run decoded the actual guest's pixels and advancing loop counter, A-button
+and positive left-X hold/release, touch corners/center/release, and continued held
+input after cancelling an admitted running wait. A mismatched-profile replacement
+was rejected while preserving the connected generation. Managed stop verified the
+owned emulator exited. Switch fixture SHA-256:
+`20e32a4d8f69e1619ebd1a6b7812f6d5c6d1dccc762b243c01b954598631de10`.
+
+The native HID sensor clamps the outer 15 pixels. Its capability therefore reports
+1280x720 logical dimensions plus inclusive bounds **x=15..1264, y=15..704**.
+The bridge and MCP reject coordinates outside that rectangle before mutation;
+the witness also proves rejection of (0,0) preserves the held touch. Legacy NDS
+and Azahar capabilities without a rectangle retain their full advertised area.
+Azahar run `007` passed again with this shared-schema change.
+
+Hidden OpenGL runs for Eden (`003`) and Eden-NX2 (`002`) produced all-black PNGs
+and failed the guest-magic assertion. An Eden visible OpenGL attempt (`004`)
+failed readiness. These cells are unqualified; their cause is unresolved.
+Eglantine OpenGL was not qualified. Initial NX2/Eglantine Vulkan attempts failed
+startup, including one observed `VK_ERROR_UNKNOWN`; successful later witnesses
+do not erase those attempts or establish their cause.
+
+Partial-start diagnostics are also separate: no-ROM runs exit 1 for both forks,
+and invalid-ROM exits 1 for NX2. Eglantine invalid-ROM and deliberately missing
+Vulkan-ICD runs for both forks exited with Windows heap-corruption status
+`0xC0000374`, before the bridge was constructed. An earlier NX2 failure exited
+`0xC0000005`. The SDL patch guards shutdown of an unpowered system, but these
+results do **not** qualify clean native failure teardown. Every diagnostic process
+exited without a supervisor timeout; this does not establish graceful cleanup.
+No baseline attribution or fix for the remaining native crash is claimed.
+
+Other buttons/stick axes, process-loss/reconnect, disconnect input cleanup,
+capture-timeout recovery, broker mode, other GPUs/hosts and visible Vulkan remain
+unqualified. Native pause is absent, so paused stability and exact stepping do
+not receive passing live credit. Switch 1 witnesses cannot qualify Switch 2.
 
 ## Live blockers and recovery
 
-1. Obtain successful source-patched native builds using the documented dependencies.
-   Keep the compiled profile and sidecar together; resolve configure/link failures
-   before calling an emulator ready. Separate build results by fork and host.
-2. Run the original CTR/Switch witnesses on each claimed fork/system/renderer cell.
-   Decode guest-visible counters, digital/analog input and touch corners/center,
-   prove release and paused stability, retain logs/screenshots and process exit.
-3. Supply a lawful Switch 2 homebrew ABI/toolchain and matching target metadata.
-   The libnx Switch 1 fixture cannot qualify this cell. Offline loader/shader data
-   tests and upstream game claims cannot substitute for a live witness.
+1. Build and qualify additional hosts/renderers independently using the documented
+   dependencies. Keep each executable, compiler runtimes and matched sidecar together.
+   The completed Windows builds do not establish Linux/macOS build or live results.
+2. Diagnose the failed OpenGL and partial-start native teardown cells before
+   claiming support there. Retain failing logs and exit status alongside any retry.
+   Additional input axes/buttons require their own guest-visible witnesses.
+3. Complete and validate Switch 2 homebrew target metadata. The user's Ozone lead
+   supplied a buildable open `libnx-ounce` library, and a target-library ELF/NSO
+   probe compiled. The available NPDM packer still emits the NX layout, leaving
+   the bootable fixture blocked. See [the pinned Ozone investigation](switch2-ozone-research.md).
+   A libnx Switch 1 fixture, build-only probe or upstream claim cannot qualify this cell.
 4. Qualify cancellation, capture timeout, disconnect and process-loss cleanup on
    actual emulators, and test direct/broker paths, visible/hidden GPU and software
    display-free modes independently. Record unsupported drivers/configurations.
