@@ -13,8 +13,8 @@ and examine memory through one interface across supported emulators.
 
 ## What this fork adds
 
-This fork provides Pico homebrew builds for testing Nintendo DS applications
-that need filesystem access.
+This fork adds storage-backed DS homebrew, experimental Nintendo emulator
+control, and guest-observed input testing.
 
 - **Storage-backed DS homebrew:** attach a writable CompactFlash image when
   launching DeSmuME, so applications can read assets and write files.
@@ -22,12 +22,29 @@ that need filesystem access.
   that could prevent startup or stall filesystem-heavy tasks such as recursive
   searches.
 - **Native Windows and Linux packages:** matching emucap and DeSmuME downloads,
-  with checksums and source archives.
+  with checksums and source archives for the Pico release.
+- **More Nintendo emulator choices:** managed launch, stop, screenshots and
+  persistent input for [Azahar](adapters/azahar/README.md) (3DS),
+  [Eden, Eden-NX2 and Eglantine](adapters/eden-family/README.md), and
+  [Ryubing](adapters/ryujinx-family/README.md) (Switch). Shared family bridges
+  support compatible forks through explicit source patches and build profiles.
+- **Alternative DS/GBA cores:** opt into
+  [melonDS DS or mGBA](adapters/libretro/README.md) through the supervised
+  software-core bridge; existing DeSmuME and Mesen2 defaults remain available.
+- **Homebrew input verification:** [Input Lab](_tests/input-lab/README.md)
+  displays controller and touch state and verifies it from captured guest
+  pixels across Nintendo platforms. Dolphin capture also handles CPU-written
+  GameCube/Wii framebuffers.
 
-Download both the core and DeSmuME package for your system from the
+For the published Pico builds, download both the core and DeSmuME package from the
 [Pico release](https://github.com/getBoolean/emucap/releases/tag/1.1.0-pico.4).
-See the [fork setup and usage notes](FORK.md)
-for details.
+The newer emulator integrations require matched source builds and remain
+experimental. Eden-NX2 and Eglantine have passed Switch 2 homebrew tests;
+this does not establish broad Switch 2 compatibility. Controls and touch vary
+by adapter; observed progress is not exact stepping, and Ryubing pause does not
+promise frozen execution. See [qualification evidence](docs/emulator-family-qualification.md),
+[Ryubing results](docs/ryubing-qualification.md), and the
+[fork setup notes](FORK.md) for supported configurations and limits.
 
 ## What you can do
 
@@ -88,13 +105,14 @@ The core exposes two MCP servers: **Control** drives the emulator, while optiona
 | xemu | Original Xbox |
 | Azahar libretro (experimental) | Nintendo 3DS |
 | Eden family (experimental) | Switch; Switch 2 targets in Eden-NX2 and Eglantine |
+| Ryubing (experimental) | Switch |
 
 See the [adapter guide](AGENT_GUIDE.md#per-emulator-adapters-the-agent-installs-when-needed)
 for setup and each profile’s supported scope. emucap maintains source patches where
 native emulator changes are needed for control and observation.
 
-The Azahar, Eden-family and opt-in melonDS DS/mGBA integrations require matched
-source builds. See the [software-core adapter](adapters/libretro/README.md) for
+The Azahar, Eden-family, Ryubing and opt-in melonDS DS/mGBA integrations require
+matched source builds. See the [software-core adapter](adapters/libretro/README.md) for
 DS/GBA selection, setup and qualified capabilities.
 Their registration and protocol tests do not establish guest compatibility.
 See the [qualification record](docs/emulator-family-qualification.md) for exact pins,
