@@ -2,7 +2,7 @@ use super::*;
 use emucap::launch::emulator_family::{self as family, EmulatorOptions, ResolvedEmulator};
 
 pub(super) fn is_family(adapter: &str) -> bool {
-    matches!(adapter, "azahar" | "eden_family")
+    matches!(adapter, "azahar" | "eden_family" | "software_libretro")
 }
 
 pub(super) fn precondition(
@@ -22,6 +22,7 @@ pub(super) fn precondition(
             serde_json::json!({"available":false,"kind":"compatible-emulator-build-required",
             "error":error.to_string(),"system":system,
             "guide":if system=="3ds" {"adapters/azahar/README.md"}
+                else if matches!(system, "nds" | "gba") {"adapters/libretro/README.md"}
                 else if options.is_some_and(|options| options.fork.as_deref() == Some("ryubing")) {"adapters/ryujinx-family/README.md"}
                 else {"adapters/eden-family/README.md"}})
         }

@@ -4,6 +4,11 @@ One native SDL producer serves Eden, Eden-NX2, Eglantine, and compatible forks.
 Per-pin patches connect it to lifecycle, VirtualGamepad, touchscreen, renderer
 capture and managed storage. No keyboard replay or window automation is used.
 
+The managed input profile selects a Pro Controller and advertises its 16
+guest-readable buttons. SL/SR are Joy-Con controls; Home/Capture have no ordinary
+guest pad readback. These four controls are rejected in this profile. Changing
+the controller profile requires separate capability and live qualification.
+
 | Selection | Source branch | Pinned revision | Declared systems |
 | --- | --- | --- | --- |
 | `eden` | `master` | `5df599128d6828fa0e42968909da848c255d22b1` | Switch |

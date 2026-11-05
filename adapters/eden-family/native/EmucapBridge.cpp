@@ -294,6 +294,9 @@ Config Config::FromEnvironment(Json profile,std::string renderer,std::string con
     if(Env("EMUCAP_RENDERER")!=result.renderer)
         throw std::invalid_argument("selected renderer differs from native renderer");
     result.family=std::move(expected_family);
+    // ConfigureEmucap selects ProController; SL/SR are Joy-Con-only and
+    // Home/Capture are system controls without ordinary guest pad readback.
+    result.allowed_buttons=(1u << 16)-1;
     if(result.family=="ryujinx-family") {
         if(native_system!="switch") throw std::invalid_argument("Ryujinx requires Switch 1");
         result.allowed_buttons=(1u << 18)-1;

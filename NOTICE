@@ -159,3 +159,19 @@ Ryubing / Ryujinx family
                 are not part of the core package. No firmware, keys or games.
 
 Research/tool and AI-use provenance: CREDITS.md.
+Input Lab design specimen and native raster UI: Pro Controller artwork from shmove/gamepadviewer-procon,
+based on Open Joystick Display Project and Anthony Mattera (KernelZechs).
+Copyright (c) 2019-2020 Open Joystick Display Project, Anthony Mattera (KernelZechs).
+The retained full terms and acknowledgment are in docs/design/assets/procon/COPYRIGHT.md.
+This product includes software developed by "Open Joystick Display Project and
+'Anthony Mattera' (http://www.ojdproject.com/)."
+
+Software libretro automation profiles:
+  melonDS DS v1.4.0, Jesse Talavera-Greenberg and contributors,
+  https://github.com/JesseTG/melonds-ds (GPL-3.0-or-later), including its
+  pinned melonDS core and separately licensed bundled dependencies.
+  mGBA 0.10.5, endrift and contributors,
+  https://github.com/mgba-emu/mgba (MPL-2.0); retain dependency notices.
+  Used by adapters/libretro for original homebrew input/capture qualification.
+  Build recipes and source-side identity glue are supplied; no emulator binaries,
+  commercial content, original BIOS, firmware or keys are included in core packages.

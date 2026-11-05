@@ -90,3 +90,43 @@ pub(super) fn adapter_supports_sound(adapter: &str) -> bool {
         "mednafen" | "mame_pc98" | "xemu" | "mesen" | "flycast" | "openmsx" | "dolphin"
     )
 }
+
+/// DS/GBA alternative cores are opt-in; the existing default routes stay stable.
+pub(super) fn adapter_with_emulator_selection(
+    system: &str,
+    backend: Option<crate::args::Pc98BackendArgs>,
+    emulator: bool,
+) -> (&'static str, Option<&'static str>) {
+    if emulator && matches!(system, "nds" | "gba") {
+        ("software_libretro", None)
+    } else {
+        adapter_for_system_and_pc98_backend(system, backend)
+    }
+}
+
+#[cfg(test)]
+mod alternative_core_tests {
+    use super::*;
+
+    #[test]
+    fn ds_gba_software_cores_require_explicit_selection() {
+        assert_eq!(
+            adapter_with_emulator_selection("nds", None, false).0,
+            "desmume_nds"
+        );
+        assert_eq!(
+            adapter_with_emulator_selection("gba", None, false).0,
+            "mesen2"
+        );
+        for system in ["nds", "gba"] {
+            assert_eq!(
+                adapter_with_emulator_selection(system, None, true).0,
+                "software_libretro"
+            );
+        }
+        assert_eq!(
+            adapter_with_emulator_selection("switch", None, true).0,
+            "eden_family"
+        );
+    }
+}

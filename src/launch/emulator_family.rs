@@ -10,13 +10,13 @@ use std::time::{Duration, Instant};
 #[derive(Debug, Clone, Default, Deserialize, Serialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub struct EmulatorOptions {
-    /// Maintained fork (azahar, eden, eden-nx2, eglantine, ryubing), or an explicit custom profile's fork.
+    /// Maintained fork (azahar, melonds, mgba, eden, eden-nx2, eglantine, ryubing), or an explicit custom profile's fork.
     pub fork: Option<String>,
     /// Patched SDL binary, or the Rust emucap-azahar supervisor for CTR.
     pub binary: Option<String>,
-    /// Azahar libretro shared library; ignored paths on other systems are rejected.
+    /// Software libretro shared library; ignored paths on other systems are rejected.
     pub core: Option<String>,
-    /// Real Python 3.12+ executable for the private Azahar worker.
+    /// Real Python 3.12+ executable for the private libretro worker.
     pub python: Option<String>,
     /// Explicit emucap-emulator-build/v1 JSON sidecar.
     pub profile: Option<String>,
@@ -175,7 +175,10 @@ fn resolve_python(explicit: Option<&str>) -> io::Result<PathBuf> {
 /// Query native identity without loading a guest, before replacement can signal the old generation.
 pub fn verify_compiled_profile(selected: &ResolvedEmulator) -> io::Result<()> {
     let mut command;
-    if selected.profile.family == EmulatorFamily::AzaharLibretro {
+    if matches!(
+        selected.profile.family,
+        EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
+    ) {
         let mut host = Command::new(&selected.binary);
         host.arg("--host-info");
         let value: serde_json::Value =
@@ -227,21 +230,29 @@ pub fn resolve(
     options: &EmulatorOptions,
 ) -> io::Result<ResolvedEmulator> {
     let azahar = system == "3ds";
-    if !azahar && !matches!(system, "switch" | "switch2") {
+    let software = matches!(system, "nds" | "gba");
+    let libretro = azahar || software;
+    if !libretro && !matches!(system, "switch" | "switch2") {
         return Err(invalid(
-            "emulator selection is only supported for 3ds, switch and switch2",
+            "emulator selection supports 3ds, nds, gba, switch and switch2",
         ));
     }
-    if !azahar && (options.core.is_some() || options.python.is_some()) {
-        return Err(invalid("core and python overrides apply only to Azahar"));
+    if !libretro && (options.core.is_some() || options.python.is_some()) {
+        return Err(invalid(
+            "core and python overrides require a libretro backend",
+        ));
     }
-    if azahar && options.config.is_some() {
+    if libretro && options.config.is_some() {
         return Err(invalid(
             "Azahar uses locked libretro options, not an external SDL config",
         ));
     }
     let fork = options.fork.as_deref().unwrap_or(if azahar {
         "azahar"
+    } else if system == "nds" {
+        "melonds"
+    } else if system == "gba" {
+        "mgba"
     } else if system == "switch2" {
         "eden-nx2"
     } else {
@@ -257,7 +268,7 @@ pub fn resolve(
         || explicit_profile
             .as_ref()
             .is_some_and(|profile| profile.family == EmulatorFamily::RyujinxFamily);
-    let binary = if azahar {
+    let binary = if libretro {
         selected_path(
             options.binary.as_deref(),
             "EMUCAP_AZAHAR_HOST",
@@ -285,12 +296,28 @@ pub fn resolve(
     };
     let binary = regular(binary)
         .map_err(|error| invalid(format!("compatible emulator binary unavailable: {error}")))?;
-    let core = if azahar {
+    let core = if libretro {
         Some(regular(selected_path(
             options.core.as_deref(),
-            "EMUCAP_AZAHAR_CORE",
-            root.join("adapters/azahar/build")
-                .join(format!("azahar_libretro{}", std::env::consts::DLL_SUFFIX)),
+            if azahar {
+                "EMUCAP_AZAHAR_CORE"
+            } else if system == "nds" {
+                "EMUCAP_MELONDS_CORE"
+            } else {
+                "EMUCAP_MGBA_CORE"
+            },
+            if azahar {
+                root.join("adapters/azahar/build")
+                    .join(format!("azahar_libretro{}", std::env::consts::DLL_SUFFIX))
+            } else {
+                root.join("adapters/libretro/build")
+                    .join(fork)
+                    .join(format!(
+                        "{}_libretro{}",
+                        if system == "nds" { "melondsds" } else { "mgba" },
+                        std::env::consts::DLL_SUFFIX
+                    ))
+            },
         ))?)
     } else {
         None
@@ -313,6 +340,8 @@ pub fn resolve(
     if profile.fork != fork
         || if azahar {
             profile.family != EmulatorFamily::AzaharLibretro
+        } else if software {
+            profile.family != EmulatorFamily::SoftwareLibretro
         } else {
             !matches!(
                 profile.family,
@@ -328,7 +357,7 @@ pub fn resolve(
         options
             .renderer
             .as_deref()
-            .unwrap_or(if azahar { "software" } else { "vulkan" });
+            .unwrap_or(if libretro { "software" } else { "vulkan" });
     profile
         .validate_selection(system, renderer)
         .map_err(invalid)?;
@@ -349,13 +378,17 @@ pub fn resolve(
         ));
     }
     let config = options.config.as_deref().map(regular).transpose()?;
-    let python = if azahar {
+    let python = if libretro {
         Some(resolve_python(options.python.as_deref())?)
     } else {
         None
     };
-    let worker = if azahar {
-        Some(regular(root.join("adapters/azahar/bridge.py"))?)
+    let worker = if libretro {
+        Some(regular(root.join(if azahar {
+            "adapters/azahar/bridge.py"
+        } else {
+            "adapters/libretro/bridge.py"
+        }))?)
     } else {
         None
     };
@@ -403,7 +436,10 @@ pub fn process_spec(
     if let Some(name) = name {
         spec = spec.env("EMUCAP_NAME", name);
     }
-    if selected.profile.family == EmulatorFamily::AzaharLibretro {
+    if matches!(
+        selected.profile.family,
+        EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
+    ) {
         spec.args([
             port.to_string(),
             selected.python.as_ref().unwrap().display().to_string(),
@@ -493,6 +529,7 @@ pub fn launch(
     let user_root = super::emu_generation_dir(
         match selected.profile.family {
             EmulatorFamily::AzaharLibretro => "azahar",
+            EmulatorFamily::SoftwareLibretro => "software-libretro",
             EmulatorFamily::EdenFamily => "eden-family",
             EmulatorFamily::RyujinxFamily => "ryujinx-family",
         },
@@ -516,7 +553,10 @@ pub fn launch(
         name,
     );
     let pid = super::spawn_detached(&spec)?;
-    if selected.profile.family != EmulatorFamily::AzaharLibretro {
+    if !matches!(
+        selected.profile.family,
+        EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
+    ) {
         return Ok(StartedEmulator {
             emulator_pid: pid,
             bridge_pid: None,

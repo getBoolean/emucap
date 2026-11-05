@@ -65,6 +65,14 @@ class CoreFailure(RuntimeError):
 
 
 class Bridge:
+    adapter = 'azahar-libretro'
+    system = '3ds'
+    buttons_map = BUTTONS
+    axes_names = AXES
+    initial_geometry = (400, 480)
+    touch_size = (320, 240)
+    options = OPTIONS
+
     def __init__(self, core, rom, directory, profile=None):
         core_path = pathlib.Path(core).resolve()
         self.dll_directory = os.add_dll_directory(str(core_path.parent)) if sys.platform == 'win32' else None
@@ -73,10 +81,10 @@ class Bridge:
         self.frame, self.presentations, self.image = 0, 0, None
         self.pixel_format, self.failure = 0, None
         self.initialized, self.loaded, self.closed = False, False, False
-        self.callbacks, self.option_values = [], dict(OPTIONS)
+        self.callbacks, self.option_values = [], dict(self.options)
         self.directory = str(pathlib.Path(directory).resolve()).encode()
         self.rom = str(pathlib.Path(rom).resolve()).encode()
-        self.geometry = (400, 480)
+        self.geometry = self.initial_geometry
         pathlib.Path(directory).mkdir(parents=True, exist_ok=True)
         signatures = {
             'retro_api_version': (C.c_uint, []),
@@ -86,9 +94,10 @@ class Bridge:
             'retro_load_game': (C.c_bool, [C.POINTER(Game)]),
             'retro_unload_game': (None, []), 'retro_run': (None, []),
             'emucap_get_build_profile_json': (C.c_char_p, []),
-            'emucap_get_effective_user_root': (C.c_char_p, []),
-            'emucap_get_last_error': (C.c_char_p, []),
         }
+        if self.system == '3ds':
+            signatures.update({'emucap_get_effective_user_root': (C.c_char_p, []),
+                               'emucap_get_last_error': (C.c_char_p, [])})
         for name, (result, arguments) in signatures.items():
             function = getattr(self.core, name)
             function.restype, function.argtypes = result, arguments
@@ -105,7 +114,7 @@ class Bridge:
             raise RuntimeError('Unsupported libretro API version')
         info = SystemInfo()
         self.core.retro_get_system_info(C.byref(info))
-        if not info.need_fullpath:
+        if not info.need_fullpath and self.system == '3ds':
             raise RuntimeError('This worker requires need_fullpath=true')
         if pathlib.Path(rom).suffix.lstrip('.').lower() not in (info.extensions or b'').decode().split('|'):
             raise ValueError('Guest extension is not supported by the core')
@@ -135,12 +144,15 @@ class Bridge:
             self.initialized = True
             self.core.retro_init()
             self.check_failure()
-            if not self.core.retro_load_game(C.byref(Game(self.rom, None, 0, None))):
-                raise RuntimeError('Azahar rejected homebrew fixture')
+            self.content_buffer = None if info.need_fullpath else C.create_string_buffer(pathlib.Path(rom).read_bytes())
+            game = Game(self.rom, C.cast(self.content_buffer, C.c_void_p) if self.content_buffer else None,
+                        len(self.content_buffer) - 1 if self.content_buffer else 0, None)
+            if not self.core.retro_load_game(C.byref(game)):
+                raise RuntimeError('Core rejected homebrew fixture')
             self.loaded = True
             self.check_failure()
-            actual = self.core.emucap_get_effective_user_root()
-            expected = pathlib.Path(directory).resolve() / 'Azahar'
+            actual = self.core.emucap_get_effective_user_root() if self.system == '3ds' else self.directory
+            expected = pathlib.Path(directory).resolve() / 'Azahar' if self.system == '3ds' else pathlib.Path(directory).resolve()
             try:
                 storage_matches = actual and pathlib.Path(os.fsdecode(actual)).resolve(strict=True) == expected
             except OSError:
@@ -158,7 +170,7 @@ class Bridge:
     def check_failure(self):
         if self.failure:
             raise CoreFailure(self.failure)
-        if hasattr(self, 'core'):
+        if self.system == '3ds' and hasattr(self, 'core'):
             error = self.core.emucap_get_last_error()
             if error:
                 raise CoreFailure(error.decode(errors='replace'))
@@ -184,8 +196,8 @@ class Bridge:
     def set_geometry(self, geometry):
         if not 0 < geometry.width <= 4096 or not 0 < geometry.height <= 4096:
             raise ValueError('Invalid software geometry')
-        if (geometry.width, geometry.height) != (400, 480):
-            raise ValueError('Software touchscreen mapping requires the pinned 400x480 dual-screen layout')
+        if (geometry.width, geometry.height) != self.initial_geometry:
+            raise ValueError(f'Software mapping requires the pinned {self.initial_geometry} layout')
         self.geometry = (geometry.width, geometry.height)
 
     def environment(self, cmd, data):
@@ -235,7 +247,7 @@ class Bridge:
         if device == 1:
             return int(key in self.buttons)
         if device == 5 and index < 2 and key < 2:
-            return getattr(self, 'axes', {}).get(AXES[index * 2 + key], 0)
+            return getattr(self, 'axes', {}).get(self.axes_names[index * 2 + key], 0) if self.axes_names else 0
         if device == 6 and index == 0 and self.touch is not None:
             x, y = self.touch
             return (round((x + 40.5) * 65534 / 400 - 32767),
@@ -291,21 +303,26 @@ class Bridge:
         self._image = value
         self._frame_snapshot = None
 
-    @staticmethod
-    def validate_touch(touch):
+    def validate_touch(self, touch):
+        if self.touch_size is None:
+            if touch is not None:
+                raise NotImplementedError('This system has no touchscreen')
+            return
+        width, height = self.touch_size
         if touch is not None and (not isinstance(touch, list) or len(touch) != 2 or
                                   any(type(v) is not int for v in touch) or
-                                  not 0 <= touch[0] <= 319 or not 0 <= touch[1] <= 239):
-            raise ValueError('Touch must be bottom-screen [x,y], 320x240')
+                                  not 0 <= touch[0] < width or not 0 <= touch[1] < height):
+            raise ValueError(f'Touch must be bottom-screen [x,y], {width}x{height}')
 
     def request(self, method, params):
         if not isinstance(params, dict):
             raise ValueError('params must be an object')
         self.check_failure()
         if method == 'hello':
-            return {'protocol_version': 1, 'adapter': 'azahar-libretro', 'system': '3ds',
+            return {'protocol_version': 1, 'adapter': self.adapter, 'system': self.system,
                     'renderer': 'software', 'core': self.system_info, 'geometry': list(self.geometry),
                     'host_build': self.native_profile, 'effective_core_user_root': self.effective_core_user_root,
+                    'input_buttons': list(self.buttons_map), 'touch_size': self.touch_size,
                     'methods': ['hello', 'status', 'set_input', 'touch', 'screenshot']}
         if method == 'status':
             return {'host_run_calls': self.frame, 'software_presentations': getattr(self, 'presentations', 0),
@@ -315,18 +332,20 @@ class Bridge:
             names, axes = params.get('buttons', []), params.get('axes', {})
             if params.get('port', 0) != 0 or type(params.get('port', 0)) is not int:
                 raise ValueError('Only controller port zero is supported')
-            if not isinstance(names, list) or any(not isinstance(name, str) or name not in BUTTONS for name in names):
+            if not isinstance(names, list) or any(not isinstance(name, str) or name not in self.buttons_map for name in names):
                 raise ValueError('Unknown button')
-            if not isinstance(axes, dict) or any(name not in AXES or type(value) is not int or
+            if not isinstance(axes, dict) or any(name not in self.axes_names or type(value) is not int or
                                                not -32767 <= value <= 32767 for name, value in axes.items()):
                 raise ValueError('Invalid controller axes')
             touch = params.get('touch')
             self.validate_touch(touch)
-            self.buttons, self.axes = {BUTTONS[name] for name in names}, dict(axes)
+            self.buttons, self.axes = {self.buttons_map[name] for name in names}, dict(axes)
             if 'touch' in params:
                 self.touch = touch
             return {'released': not names and not axes}
         if method == 'touch':
+            if self.touch_size is None:
+                raise NotImplementedError('This system has no touchscreen')
             if params.get('port', 0) != 0 or type(params.get('port', 0)) is not int:
                 raise ValueError('Only touch port zero is supported')
             if params.get('frames') is not None:
@@ -424,7 +443,7 @@ def serve(bridge, source, output, continuous=False):
         output.flush()
 
 
-def main():
+def main(bridge_type=Bridge):
     parser = argparse.ArgumentParser(__doc__)
     parser.add_argument('--core', required=True)
     parser.add_argument('--rom', required=True)
@@ -438,7 +457,16 @@ def main():
     with os.fdopen(os.dup(sys.stdout.fileno()), 'wb', buffering=0) as output:
         sys.stdout.flush()
         os.dup2(sys.stderr.fileno(), sys.stdout.fileno())
-        bridge = Bridge(args.core, args.rom, args.directory, args.profile)
+        if sys.platform == 'win32':
+            # MinGW's MSVCRT descriptors are separate from Python's UCRT table.
+            # Redirect both before loading a core so native logs cannot use the
+            # original protocol handle (or the handle closed by os.dup2).
+            runtime = C.CDLL('msvcrt')
+            runtime._dup2.argtypes = [C.c_int, C.c_int]
+            runtime._dup2.restype = C.c_int
+            if runtime._dup2(2, 1) != 0:
+                raise RuntimeError('Cannot redirect native diagnostic output')
+        bridge = bridge_type(args.core, args.rom, args.directory, args.profile)
         try:
             serve(bridge, sys.stdin.buffer, output, continuous=True)
         finally:

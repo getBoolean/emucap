@@ -342,11 +342,21 @@ impl AzaharHost {
             return Err(invalid("Azahar build profile is oversized"));
         }
         let profile: BuildProfile = serde_json::from_slice(&bytes).map_err(invalid)?;
+        let system = profile
+            .systems
+            .first()
+            .ok_or_else(|| invalid("missing core system"))?;
         profile
-            .validate_selection("3ds", "software")
+            .validate_selection(system, "software")
             .map_err(invalid)?;
-        if profile.family != EmulatorFamily::AzaharLibretro {
-            return Err(invalid("Azahar requires a libretro family build profile"));
+        if !matches!(
+            profile.family,
+            EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
+        ) || profile.systems.len() != 1
+        {
+            return Err(invalid(
+                "supervisor requires a single-system libretro build profile",
+            ));
         }
         let content = config.content.canonicalize()?;
         std::fs::create_dir_all(config.directory)?;
@@ -385,7 +395,7 @@ impl AzaharHost {
             .result
             .ok_or_else(|| invalid("worker hello missing result"))?;
         if worker_hello.get("protocol_version").and_then(Value::as_u64) != Some(1)
-            || worker_hello.get("adapter").and_then(Value::as_str) != Some("azahar-libretro")
+            || worker_hello.get("adapter").and_then(Value::as_str) != Some(profile.family.adapter())
             || worker_hello.get("renderer").and_then(Value::as_str) != Some("software")
         {
             return Err(invalid(
@@ -397,7 +407,12 @@ impl AzaharHost {
             .get("effective_core_user_root")
             .and_then(Value::as_str)
             .ok_or_else(|| invalid("native effective core user root was not reported"))?;
-        if Path::new(effective).canonicalize()? != directory.join("Azahar") {
+        let expected_root = if profile.family == EmulatorFamily::AzaharLibretro {
+            directory.join("Azahar")
+        } else {
+            directory.clone()
+        };
+        if Path::new(effective).canonicalize()? != expected_root {
             return Err(invalid(
                 "native core user root is outside the managed Azahar directory",
             ));
@@ -440,16 +455,18 @@ impl AzaharHost {
                 )
             })
             .collect::<serde_json::Map<_, _>>();
-        json!({
-            "protocol_version":1,"adapter":"azahar-libretro","system":"3ds","renderer":"software",
+        let azahar = self.profile.family == EmulatorFamily::AzaharLibretro;
+        let ds = self.profile.systems[0] == "nds";
+        let mut hello = json!({
+            "protocol_version":1,"adapter":self.profile.family.adapter(),"system":self.profile.systems[0],"renderer":"software",
             "build":crate::build_identity::BUILD_HASH,"host_build":self.profile,
             "launch_id":self.launch_id,"content":self.content,"control_session_lifecycle":true,
             "managed_user_root":self.directory,
             "effective_core_user_root":self.worker_hello.get("effective_core_user_root"),
             "methods":["hello","status","get_rom_info","set_input","touch","screenshot","wait_for_running_frames","cancel_operation"],
             "memory_types":[], "host_features":["supervised_libretro_worker"],
-            "contracts":crate::contracts::advertisement_value(&["azahar.input-touch.persistent-only"]),
-            "input_buttons":{"port":0,"buttons":["b","y","select","start","up","down","left","right","a","x","l","r","zl","zr"]},
+            "contracts":crate::contracts::advertisement_value(if azahar { &["azahar.input-touch.persistent-only"] } else if ds { &["libretro.input-touch.persistent-only"] } else { &[] }),
+            "input_buttons":{"port":0,"buttons":self.worker_hello["input_buttons"]},
             "input_axes":{"semantics":"complete_persistent_controller_state","ports":[{"port":0,"axes":axes}]},
             "touch_capability":{"ports":[0],"width":320,"height":240,"coordinate_space":"touchscreen","contacts":1},
             "progress_capability":{"domain":"libretro_present","max_count":5000,"max_timeout_ms":250000,"overshoot":true,"running_only":true},
@@ -457,7 +474,25 @@ impl AzaharHost {
             "capability_notes":{"execution":"continuously running software core; waits observe accepted software video callbacks; exact step/tap unavailable","touch":"persistent single touch only"},
             "geometry":self.worker_hello.get("geometry"),
             "freeze_policy":{"kind":"running_only","exact":false}
-        })
+        });
+        if !azahar {
+            hello.as_object_mut().unwrap().remove("input_axes");
+            if ds {
+                hello["touch_capability"]["width"] = json!(256);
+                hello["touch_capability"]["height"] = json!(192);
+            } else {
+                hello.as_object_mut().unwrap().remove("touch_capability");
+                hello["capability_notes"]
+                    .as_object_mut()
+                    .unwrap()
+                    .remove("touch");
+                hello["methods"]
+                    .as_array_mut()
+                    .unwrap()
+                    .retain(|method| method != "touch");
+            }
+        }
+        hello
     }
 
     fn wait_progress(
@@ -537,7 +572,9 @@ impl AzaharHost {
         }
         let result = match request.method.as_str() {
             "hello" => self.hello(),
-            "get_rom_info" => json!({"path":self.content,"rom_sha1":self.rom_sha1,"system":"3ds"}),
+            "get_rom_info" => {
+                json!({"path":self.content,"rom_sha1":self.rom_sha1,"system":self.profile.systems[0]})
+            }
             "wait_for_running_frames" => return self.wait_progress(&request, cancellation),
             "status" => {
                 let response = self
@@ -642,6 +679,9 @@ impl OwnedHandler for AzaharHost {
                 ),
                 (u64::MAX, "touch", json!({"port":0,"release":true})),
             ] {
+                if method == "touch" && self.profile.systems[0] == "gba" {
+                    continue;
+                }
                 match self.worker.exchange(
                     &Request::new(id, method, params),
                     Duration::from_secs(2),

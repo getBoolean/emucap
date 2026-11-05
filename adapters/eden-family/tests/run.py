@@ -121,6 +121,9 @@ def exercise(binary, root):
         assert hello['progress_capability']['domain'] == 'native_render_present'
         assert pathlib.Path(hello['managed_user_root']).resolve() == root.resolve()
         assert hello['contracts']['active_exceptions'] == ['eden.input-touch.persistent-only']
+        assert hello['input_buttons'] == 'a b x y lstick rstick l r zl zr plus minus left up right down'.split()
+        for unavailable in ('sl', 'sr', 'home', 'capture'):
+            assert not terminal(send('set_input', {'port': 0, 'buttons': [unavailable]}))['ok']
         assert terminal(send('set_input', {'port': 0, 'buttons': ['a'], 'axes': {'stick_x': 32767}}))['ok']
         await_file(root / 'input.json', lambda value: value == {'a': True, 'stick_x': 32767})
         assert hello['touch_capability']['bounds'] == {'x_min': 15, 'x_max': 1264, 'y_min': 15, 'y_max': 704}

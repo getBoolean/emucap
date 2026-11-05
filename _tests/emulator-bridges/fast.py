@@ -72,6 +72,8 @@ def main():
             del native
         check('azahar-worker', [sys.executable, '-m', 'unittest', 'discover',
                                '-s', 'adapters/azahar', '-p', 'test_*.py'])
+        check('software-libretro-worker', [sys.executable, '-m', 'unittest', 'discover',
+                                          '-s', 'adapters/libretro', '-p', 'test_*.py'])
         check('eden-build-profile', [sys.executable, '-m', 'unittest', 'discover',
                                     '-s', 'adapters/eden-family/tests', '-p', 'test_*.py'])
         check('ryujinx-build-profile', [sys.executable, '-m', 'unittest', 'discover',

@@ -10,6 +10,24 @@ fn embedded_contract_sources_validate() {
 }
 
 #[test]
+fn software_libretro_persistent_touch_is_ds_only() {
+    let ad = advertisement_from_hello(&json!({"contracts":advertisement_value(&[
+        "libretro.input-touch.persistent-only"
+    ])}));
+    let methods = vec!["status".into(), "touch".into()];
+    assert_eq!(
+        validate_advertisement(&ad, Some("software-libretro"), Some("nds"), &methods).state,
+        "validated"
+    );
+    for (adapter, system) in [("software-libretro", "gba"), ("azahar-libretro", "nds")] {
+        assert_ne!(
+            validate_advertisement(&ad, Some(adapter), Some(system), &methods).state,
+            "validated"
+        );
+    }
+}
+
+#[test]
 fn ryujinx_persistent_touch_contract_is_strictly_scoped() {
     let ad = advertisement_from_hello(&json!({"contracts":advertisement_value(&[
         "ryujinx.input-touch.persistent-only"

@@ -38,9 +38,17 @@ fn main() -> anyhow::Result<()> {
     })?;
     host.write_startup_receipt(Path::new(&args[8]))?;
     let probe = host.terminal_probe();
+    let adapter = if std::env::var("EMUCAP_SYSTEM")
+        .ok()
+        .is_some_and(|system| matches!(system.as_str(), "nds" | "gba"))
+    {
+        "software-libretro"
+    } else {
+        "azahar-libretro"
+    };
     serve_reconnecting_owned(
         port,
-        "azahar-libretro",
+        adapter,
         host,
         probe,
         TemporalAdmission {

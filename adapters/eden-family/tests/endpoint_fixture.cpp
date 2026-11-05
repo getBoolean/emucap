@@ -15,7 +15,8 @@ int Exercise() {
     auto root_utf8=std::filesystem::current_path().u8string();
     auto config=Config::FromEnvironment(profile,"vulkan","homebrew.nro",
         std::string(reinterpret_cast<const char*>(root_utf8.data()),root_utf8.size()),"fixture-build","switch");
-    const auto root=std::filesystem::u8path(config.user_root);
+    const auto root=std::filesystem::path(std::u8string(
+        reinterpret_cast<const char8_t*>(config.user_root.data()),config.user_root.size()));
     std::atomic<uint64_t> counter{0};std::atomic<bool> running{true};
     Hooks hooks;
     hooks.running=[&]{return running.load();};hooks.counter=[&]{return counter.load();};

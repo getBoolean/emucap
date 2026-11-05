@@ -26,6 +26,19 @@ Capture = c.CFUNCTYPE(c.c_int32, c.c_void_p, c.c_uint64)
 SetRunning = c.CFUNCTYPE(c.c_int32, c.c_void_p, c.c_int32)
 
 
+def set_native_environment(**values):
+    os.environ.update(values)
+    if os.name == 'nt':
+        # A MinGW DLL's MSVCRT environment table is separate from Python's UCRT
+        # table. Update the native view too before testing live getenv admission.
+        runtime = c.CDLL('msvcrt')
+        runtime._wputenv.argtypes, runtime._wputenv.restype = [c.c_wchar_p], c.c_int
+        runtime._wgetenv.argtypes, runtime._wgetenv.restype = [c.c_wchar_p], c.c_wchar_p
+        for key, value in values.items():
+            assert runtime._wputenv(key + '=' + value) == 0
+            assert runtime._wgetenv(key) == value
+
+
 class Options(c.Structure):
     _fields_ = [("struct_size", c.c_uint32), ("abi_version", c.c_uint32)] + [
         (name, c.c_char_p) for name in ("profile_json", "renderer", "content",
@@ -63,7 +76,7 @@ def exercise(library):
         profile = dict(schema="emucap-emulator-build/v1", family="ryujinx-family", bridge_api=1,
                        fork="fixture", revision="a" * 40, systems=["switch"], renderers=["vulkan"])
         profile_path = root / "profile.json"; profile_path.write_text(json.dumps(profile))
-        os.environ.update(EMUCAP_PORT=str(port), EMUCAP_SESSION_TOKEN=key, EMUCAP_LAUNCH_ID=runtime,
+        set_native_environment(EMUCAP_PORT=str(port), EMUCAP_SESSION_TOKEN=key, EMUCAP_LAUNCH_ID=runtime,
             EMUCAP_SYSTEM="switch", EMUCAP_RENDERER="vulkan", EMUCAP_USER_ROOT=str(root),
             EMUCAP_BUILD_PROFILE=str(profile_path))
         state = dict(buttons=0, axes=None, touch=None, running=True, capture=0, count=0,
@@ -120,9 +133,9 @@ def exercise(library):
             assert b"environment/build mismatch" in error.value, error.value
         options.profile_json = json.dumps(profile).encode()
         profile_path.write_text(json.dumps(profile))
-        os.environ["EMUCAP_SYSTEM"] = "switch2"
+        set_native_environment(EMUCAP_SYSTEM="switch2")
         assert not dll.emucap_native_create(c.byref(options), c.byref(callbacks), error, len(error))
-        os.environ["EMUCAP_SYSTEM"] = "switch"
+        set_native_environment(EMUCAP_SYSTEM="switch")
         handle = dll.emucap_native_create(c.byref(options), c.byref(callbacks), error, len(error))
         assert handle, error.value
         stop = threading.Event()

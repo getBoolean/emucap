@@ -162,7 +162,17 @@ pub(crate) fn make_launch(
             "system": system,
         });
     }
-    let (adapter, module) = adapter_for_system_and_pc98_backend(system, a.pc98_backend);
+    let (adapter, module) = super::system::adapter_with_emulator_selection(
+        system,
+        a.pc98_backend,
+        a.emulator.is_some(),
+    );
+    if adapter == "software_libretro"
+        && (a.nds_storage_image.is_some() || a.content_path2.is_some() || a.display == Some(true))
+    {
+        return serde_json::json!({"launched":false,
+            "reason":"software libretro supports headless single-content launch without an external storage image"});
+    }
     let selected_emulator = if super::emulator_family::is_family(adapter) {
         let Some(root) = find_repo_root() else {
             return serde_json::json!({"launched":false,"error":"emucap repository root unavailable"});
@@ -179,7 +189,7 @@ pub(crate) fn make_launch(
         }
     } else {
         if a.emulator.is_some() {
-            return serde_json::json!({"launched":false,"error":"emulator selection applies only to 3ds, switch and switch2"});
+            return serde_json::json!({"launched":false,"error":"emulator selection supports 3ds, nds, gba, switch and switch2"});
         }
         None
     };
@@ -502,7 +512,7 @@ pub(crate) fn make_launch(
         "pcsx2" => launch_pcsx2(port, producer_key, runtime, effective_args),
         "dolphin" => launch_dolphin(port, producer_key, runtime, system, effective_args),
         "xemu" => super::xemu::launch_xemu(port, producer_key, runtime, effective_args),
-        "azahar" | "eden_family" => super::emulator_family::start(
+        "azahar" | "eden_family" | "software_libretro" => super::emulator_family::start(
             selected_emulator
                 .as_ref()
                 .expect("family selection admitted"),

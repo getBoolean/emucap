@@ -1,0 +1,24 @@
+--- a/Source/Core/VideoCommon/FrameDumper.h
++++ b/Source/Core/VideoCommon/FrameDumper.h
+@@ -44,6 +44,7 @@
+                                              std::chrono::milliseconds timeout);
+ 
+   bool IsFrameDumping() const;
++  bool IsScreenshotPending() const { return m_screenshot_request.IsSet(); }
+   int GetRequiredResolutionLeastCommonMultiple() const;
+ 
+   void DoState(PointerWrap& p);
+--- a/Source/Core/VideoCommon/Present.cpp
++++ b/Source/Core/VideoCommon/Present.cpp
+@@ -321,6 +321,11 @@
+     // we should either apply post processing as well, or port its gamma correction code
+     g_frame_dumper->DumpCurrentFrame(m_xfb_entry->texture.get(), m_xfb_rect, target_rect, ticks,
+                                      m_frame_count);
++    // CPU-written XFB homebrew need not emit a GX frame-end command. Complete a
++    // requested screenshot on the video owner after readback instead of waiting
++    // indefinitely for after_frame_event. Movie dumping retains its normal path.
++    if (g_frame_dumper->IsScreenshotPending())
++      g_frame_dumper->FlushFrameDump();
+   }
+ }
+ 

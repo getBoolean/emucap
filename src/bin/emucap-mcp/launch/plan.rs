@@ -7,9 +7,7 @@ use super::*;
 
 #[cfg(test)]
 pub(super) use super::system::adapter_for_system;
-pub(super) use super::system::{
-    adapter_for_system_and_pc98_backend, adapter_supports_sound, normalize_system,
-};
+pub(super) use super::system::{adapter_supports_sound, normalize_system};
 
 pub(super) fn same_path(a: &Path, b: &Path) -> bool {
     #[cfg(windows)]
@@ -519,7 +517,7 @@ pub(super) fn build_required_precondition(
                 .as_str()
                 .unwrap_or("adapters/xemu/build.sh")
         )),
-        "azahar" | "eden_family" => serde_json::json!("Build the selected pinned adapter, supply its matching emucap-emulator-build.json, and review the adapter README prerequisites. Explicit selection uses the emulator launch object."),
+        "azahar" | "eden_family" | "software_libretro" => serde_json::json!("Build the selected pinned adapter, supply its matching emucap-emulator-build.json, and review the adapter README prerequisites. Explicit selection uses the emulator launch object."),
         _ => serde_json::Value::Null,
     }
 }
@@ -981,9 +979,17 @@ fn make_launch_plan_inner(port: Option<u16>, args: &LaunchPlanArgs) -> serde_jso
             "listening_port": p,
         });
     }
-    let (adapter, force_module) = adapter_for_system_and_pc98_backend(system, args.pc98_backend);
+    let (adapter, force_module) = super::system::adapter_with_emulator_selection(
+        system,
+        args.pc98_backend,
+        args.emulator.is_some(),
+    );
+    if adapter == "software_libretro" && args.nds_storage_image.is_some() {
+        return serde_json::json!({"ok":false,"ready_to_launch":false,
+            "reason":"external nds_storage_image is supported only by DeSmuME"});
+    }
     if args.emulator.is_some() && !super::emulator_family::is_family(adapter) {
-        return serde_json::json!({"ok":false,"ready_to_launch":false,"reason":"emulator selection applies only to 3ds, switch and switch2"});
+        return serde_json::json!({"ok":false,"ready_to_launch":false,"reason":"emulator selection supports 3ds, nds, gba, switch and switch2"});
     }
     let mut preferred_launcher_args = serde_json::json!({
         "content_path": content_path,

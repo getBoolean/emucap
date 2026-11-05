@@ -4,6 +4,7 @@ on:
   push:
     paths:
       - 'adapters/azahar/**'
+      - 'adapters/libretro/**'
       - 'adapters/eden-family/**'
       - 'adapters/ryujinx-family/**'
       - 'adapters/_common/**'
@@ -14,6 +15,7 @@ on:
   pull_request:
     paths:
       - 'adapters/azahar/**'
+      - 'adapters/libretro/**'
       - 'adapters/eden-family/**'
       - 'adapters/ryujinx-family/**'
       - 'adapters/_common/**'

@@ -37,6 +37,26 @@ above. Their inclusion describes actual use, not a blanket licensing grant.
 
 ## Reference material and research inputs
 
+- [Dolphin](https://github.com/dolphin-emu/dolphin), Dolphin Emulator Project and
+  contributors: source-built from emucap's pinned revision and patch stack for
+  original GameCube/Wii Input Lab qualification. GPL-2.0-or-later; bundled
+  dependencies retain their own notices. Build success and live guest results
+  are recorded separately in the Input Lab qualification report.
+- [melonDS](https://github.com/melonDS-emu/melonDS), melonDS team: inspected
+  1.1 native input/touch/frame APIs and installed the official portable desktop
+  build. GPL-3.0-or-later. The desktop GUI has installation/version proof only.
+- [melonDS DS](https://github.com/JesseTG/melonds-ds), Jesse Talavera-Greenberg
+  and contributors: built v1.4.0 at
+  `f394adbacb5722ee97c1b37c8064da9a25818310`, using its pinned melonDS core and
+  built-in replacement system files for original DS Input Lab qualification.
+  GPL-3.0-or-later; bundled dependencies retain their own notices. emucap adds
+  build identity and uses a shared supervised software libretro worker.
+- [mGBA](https://mgba.io/), endrift and contributors: installed official 0.10.5
+  portable desktop build, inspected Lua APIs, and built its libretro core at
+  `26b7884bc25a5933960f3cdcd98bac1ae14d42e2` for original GBA Input Lab live
+  qualification. The GUI has version proof; input/capture proof belongs to the
+  separate core-based adapter. MPL-2.0; dependency notices remain separate.
+
 - [Ozone](https://github.com/alula/Ozone), Alula and Atmosphère contributors:
   inspected as a GPLv2 research source for Ounce platform metadata, build recipes
   and its `npdmtool` invocation. It is not used here as a verified complete Switch 2
@@ -72,6 +92,33 @@ and bundled dependency notices when preparing distributions. An MIT upstream
 frontend does not replace the GPL notice on this project's native bridge. This
 record is not a completed legal review of a future combined binary package.
 
+## Input Lab visual specimen artwork
+
+The Pro Controller render in `docs/design/input-lab-preview.html` and the native
+Input Lab raster UI (`_tests/input-lab/`) uses the
+[shmove/gamepadviewer-procon](https://github.com/shmove/gamepadviewer-procon)
+GamepadViewer skin, based on Open Joystick Display Project artwork by Anthony
+Mattera (KernelZechs), copyright 2019–2020. Asset bytes are retained unchanged;
+emucap adapts their composition and simulated input-state styling. This is a
+design specimen, not native homebrew or qualified input-viewer integration.
+The exact upstream revision, source paths and SHA-256 hashes are recorded in
+`docs/design/assets/procon/provenance.json`. The full redistribution conditions
+and disclaimer are retained in `docs/design/assets/procon/COPYRIGHT.md`.
+
+This product includes software developed by "Open Joystick Display Project and
+'Anthony Mattera' (http://www.ojdproject.com/)."
+
+Inclusion does not imply endorsement or affiliation with those authors or Nintendo.
+
+Input Lab's native raster conversion uses
+[resvg-py](https://github.com/baseplate-admin/resvg-py), baseplate-admin and
+contributors, version 0.5.0 (MIT), and its resvg dependencies, plus
+[Pillow](https://python-pillow.github.io/), Pillow contributors (HPND/PIL-derived
+license). These are build/test tools; their use does not replace the artwork's
+terms. Original Input Lab C programs and bitmap glyphs carry CC0-1.0 notices.
+Linked devkitPro runtime libraries retain their own licenses. Cross-building a
+port does not qualify its emulator input or physical hardware behavior.
+
 ## AI usage disclosure
 
 OpenAI Codex assisted research, planning, source implementation, debugging,
@@ -79,7 +126,10 @@ tests, build automation, documentation and local review for this emulator
 integration. Anthropic Claude, reached through T3 Code, supplied an independent
 adversarial code review. Its provider was attested; the precise served model was
 not independently confirmed. AI-assisted code includes the bridge glue,
-qualification harnesses and original test-witness implementation.
+qualification harnesses and original test-witness implementation. The later
+DS/GBA setup and Dolphin Input Lab changes used OpenAI Codex and its five
+read-only simplification lenses; the historical Claude review does not cover
+that later change set.
 
 AI output is reviewed and tested; generation alone is not acceptance evidence.
 This work records automated source review and reproducible checks, without

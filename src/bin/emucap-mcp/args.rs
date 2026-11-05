@@ -980,7 +980,7 @@ pub(crate) struct AnalysisArgs {
 #[derive(Debug, Deserialize, schemars::JsonSchema)]
 #[serde(deny_unknown_fields)]
 pub(crate) struct LaunchPlanArgs {
-    /// Explicit build, fork, core and configuration selection for 3DS/Switch family adapters.
+    /// Explicit build/fork/core selection for 3DS, DS, GBA and Switch family adapters.
     #[serde(default)]
     pub(crate) emulator: Option<emucap::launch::emulator_family::EmulatorOptions>,
     /// Writable raw CompactFlash image for NDS homebrew, attached with DeSmuME's

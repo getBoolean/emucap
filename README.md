@@ -77,6 +77,7 @@ The core exposes two MCP servers: **Control** drives the emulator, while optiona
 | Mednafen | PlayStation, Saturn, PC Engine, PC-FX, Mega Drive / Genesis, WonderSwan / Color, Neo Geo Pocket / Color |
 | Flycast | Dreamcast |
 | DeSmuME | Nintendo DS |
+| melonDS DS / mGBA cores (opt-in, experimental) | Nintendo DS / Game Boy Advance |
 | PPSSPP | PSP |
 | PCSX2 | PlayStation 2 |
 | Dolphin | GameCube, Wii |
@@ -92,7 +93,9 @@ See the [adapter guide](AGENT_GUIDE.md#per-emulator-adapters-the-agent-installs-
 for setup and each profile’s supported scope. emucap maintains source patches where
 native emulator changes are needed for control and observation.
 
-The new Azahar and Eden-family integrations require matched source-patched builds.
+The Azahar, Eden-family and opt-in melonDS DS/mGBA integrations require matched
+source builds. See the [software-core adapter](adapters/libretro/README.md) for
+DS/GBA selection, setup and qualified capabilities.
 Their registration and protocol tests do not establish guest compatibility.
 See the [qualification record](docs/emulator-family-qualification.md) for exact pins,
 build results, live blockers, and unsupported operations. Eglantine uses

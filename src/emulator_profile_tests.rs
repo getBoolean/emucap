@@ -1,6 +1,24 @@
 use super::*;
 use serde_json::json;
 
+#[test]
+fn software_cores_are_pinned_and_cannot_claim_other_systems() {
+    for (fork, system, wrong) in [("mgba", "gba", "nds"), ("melonds", "nds", "gba")] {
+        let pin = maintained_source(fork).unwrap();
+        let mut profile = eden();
+        profile.family = EmulatorFamily::SoftwareLibretro;
+        profile.fork = fork.into();
+        profile.repository = pin.repository.into();
+        profile.revision = pin.revision.into();
+        profile.systems = vec![system.into()];
+        profile.renderers = vec!["software".into()];
+        assert!(profile.validate_selection(system, "software").is_ok());
+        assert!(profile.validate_selection(system, "opengl").is_err());
+        profile.systems = vec![wrong.into()];
+        assert!(profile.validate().is_err());
+    }
+}
+
 fn eden() -> BuildProfile {
     BuildProfile {
         schema: BUILD_PROFILE_SCHEMA.into(),

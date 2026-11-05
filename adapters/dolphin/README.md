@@ -265,3 +265,14 @@ Linux GUI compilation needs Qt's private development headers (`qt6-base-private-
 Debian/Ubuntu). Set `EMUCAP_DOLPHIN_REQUIRE_GUI=1` to require the GUI target as well as
 headless; release CI uses this mode. Local headless-only builds can use
 `EMUCAP_DOLPHIN_BUILD_GUI=0` with the GUI requirement unset.
+
+### CPU framebuffer homebrew capture
+
+The screenshot patch now flushes pending readback at video presentation. This
+also supports original homebrew that writes XFB memory directly and emits no
+GX frame-end command. Managed launch selects raw XFB capture using
+`--config=Graphics.Settings.FrameDumpsResolutionType=2`; display aspect stretching
+does not resample analysis captures. Windows D3D original Input Lab digital
+input passed for GameCube and Wii. See the [qualification record](../../docs/input-lab-qualification.md)
+for exact build identity, failed attempts and capability limits. These runs do
+not qualify public analog/trigger injection, Wii IR/extensions or hardware.

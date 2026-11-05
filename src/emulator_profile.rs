@@ -10,6 +10,7 @@ pub const BRIDGE_API_VERSION: u32 = 1;
 #[serde(rename_all = "kebab-case")]
 pub enum EmulatorFamily {
     AzaharLibretro,
+    SoftwareLibretro,
     EdenFamily,
     RyujinxFamily,
 }
@@ -18,6 +19,7 @@ impl EmulatorFamily {
     pub fn adapter(self) -> &'static str {
         match self {
             Self::AzaharLibretro => "azahar-libretro",
+            Self::SoftwareLibretro => "software-libretro",
             Self::EdenFamily => "eden-family-native",
             Self::RyujinxFamily => "ryujinx-family-native",
         }
@@ -51,6 +53,22 @@ pub struct SourcePin {
 }
 
 pub const MAINTAINED_SOURCES: &[SourcePin] = &[
+    SourcePin {
+        family: EmulatorFamily::SoftwareLibretro,
+        fork: "mgba",
+        repository: "https://github.com/mgba-emu/mgba.git",
+        reference: "0.10.5",
+        revision: "26b7884bc25a5933960f3cdcd98bac1ae14d42e2",
+        systems: &["gba"],
+    },
+    SourcePin {
+        family: EmulatorFamily::SoftwareLibretro,
+        fork: "melonds",
+        repository: "https://github.com/JesseTG/melonds-ds.git",
+        reference: "v1.4.0",
+        revision: "f394adbacb5722ee97c1b37c8064da9a25818310",
+        systems: &["nds"],
+    },
     SourcePin {
         family: EmulatorFamily::RyujinxFamily,
         fork: "ryubing",
@@ -131,6 +149,7 @@ impl BuildProfile {
         }
         let (systems, renderers): (&[&str], &[&str]) = match self.family {
             EmulatorFamily::AzaharLibretro => (&["3ds"], &["software"]),
+            EmulatorFamily::SoftwareLibretro => (&["nds", "gba"], &["software"]),
             EmulatorFamily::EdenFamily => (&["switch", "switch2"], &["vulkan", "opengl"]),
             EmulatorFamily::RyujinxFamily => (&["switch"], &["vulkan", "opengl"]),
         };
