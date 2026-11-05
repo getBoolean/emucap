@@ -11,21 +11,23 @@ import platform
 import subprocess
 import sys
 
-PINS = {
-    'mgba': ('https://github.com/mgba-emu/mgba.git', '26b7884bc25a5933960f3cdcd98bac1ae14d42e2', 'gba', 'mgba_libretro'),
-    'melonds': ('https://github.com/JesseTG/melonds-ds.git', 'f394adbacb5722ee97c1b37c8064da9a25818310', 'nds', 'melondsds_libretro'),
-}
+HERE = pathlib.Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / '_common'))
+from build_support import maintained_source
+
 
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument('--fork', choices=PINS, required=True)
+    parser.add_argument('--fork', choices=('mgba', 'melonds'), required=True)
     parser.add_argument('--source', type=pathlib.Path, required=True)
     parser.add_argument('--build', type=pathlib.Path, required=True)
     parser.add_argument('--cmake', default='cmake')
     parser.add_argument('--jobs', type=int, default=4)
     args = parser.parse_args()
-    repository, revision, system, target = PINS[args.fork]
+    descriptor = maintained_source(args.fork)
+    repository, revision = descriptor['repository'], descriptor['revision']
+    system, target = descriptor['systems'][0], descriptor['target']
     source, build = args.source.resolve(), args.build.resolve()
     actual = subprocess.check_output(['git', '-C', str(source), 'rev-parse', 'HEAD'], text=True).strip()
     dirty = subprocess.check_output(['git', '-C', str(source), 'status', '--porcelain', '--untracked-files=no'], text=True)

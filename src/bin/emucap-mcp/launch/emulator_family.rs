@@ -14,8 +14,8 @@ pub(super) fn precondition(
         Ok(selected) => serde_json::json!({
             "available":true,"path":selected.binary.display().to_string(),
             "profile":selected.profile,"renderer":selected.renderer,
-            "core":selected.core.map(|path|path.display().to_string()),
-            "python":selected.python.map(|path|path.display().to_string()),
+            "core":selected.runtime.core().map(|path|path.display().to_string()),
+            "python":selected.runtime.python().map(|path|path.display().to_string()),
             "qualification":"experimental; inspect per-build live evidence",
         }),
         Err(error) => {
@@ -99,9 +99,7 @@ mod tests {
         .unwrap();
         let selected = ResolvedEmulator {
             binary: root.path().join("Ryujinx.exe"),
-            core: None,
-            python: None,
-            worker: None,
+            runtime: family::ResolvedRuntime::Native,
             profile_path: root.path().join("profile.json"),
             config: None,
             system: "switch".into(),
@@ -134,9 +132,7 @@ mod tests {
         .unwrap();
         let selected = ResolvedEmulator {
             binary: root.path().join("eden-sdl"),
-            core: None,
-            python: None,
-            worker: None,
+            runtime: family::ResolvedRuntime::Native,
             profile_path: root.path().join("profile.json"),
             config: None,
             system: "switch2".into(),

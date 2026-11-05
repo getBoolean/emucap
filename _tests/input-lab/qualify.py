@@ -33,14 +33,23 @@ def validate_capabilities(status, system):
         raise RuntimeError(f'{system}: required touchscreen capability mismatch')
     if bool(status.get('input_axes')) != required_axes:
         raise RuntimeError(f'{system}: required analog capability mismatch')
-    if system in ('nds', 'gba'):
-        buttons = status.get('input_buttons', {})
-        buttons = buttons.get('buttons', []) if isinstance(buttons, dict) else buttons
+    buttons = status.get('input_buttons', {})
+    buttons = buttons.get('buttons', []) if isinstance(buttons, dict) else buttons
+    if system in ('nds', 'gba', '3ds'):
         expected = set('a b select start up down left right l r'.split())
-        if system == 'nds':
+        if system != 'gba':
             expected.update(('x', 'y'))
-        if not isinstance(buttons, list) or set(buttons) != expected or len(buttons) != len(expected):
-            raise RuntimeError(f'{system}: required button capability mismatch')
+        if system == '3ds':
+            expected.update(('zl', 'zr'))
+    else:
+        expected = set('a b x y lstick rstick l r zl zr plus minus left up right down'.split())
+        # Eden uses ProController; Ryujinx also exposes the Joy-Con rail buttons.
+        if status.get('adapter') == 'ryujinx-family-native':
+            expected.update(('sl', 'sr'))
+    if (not isinstance(buttons, list) or len(set(buttons)) != len(buttons)
+            or not expected.issubset(buttons)
+            or (system in ('nds', 'gba') and set(buttons) != expected)):
+        raise RuntimeError(f'{system}: required button capability mismatch')
 
 
 def main():

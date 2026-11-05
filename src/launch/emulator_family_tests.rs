@@ -62,9 +62,7 @@ fn native() -> ResolvedEmulator {
     let pin = maintained_source("eglantine").unwrap();
     ResolvedEmulator {
         binary: PathBuf::from("/emulator path/eden-sdl"),
-        core: None,
-        python: None,
-        worker: None,
+        runtime: ResolvedRuntime::Native,
         profile_path: PathBuf::from("/profile.json"),
         config: None,
         system: "switch2".into(),
@@ -72,9 +70,9 @@ fn native() -> ResolvedEmulator {
         profile: BuildProfile {
             schema: BUILD_PROFILE_SCHEMA.into(),
             family: EmulatorFamily::EdenFamily,
-            fork: pin.fork.into(),
-            repository: pin.repository.into(),
-            revision: pin.revision.into(),
+            fork: pin.fork.clone(),
+            repository: pin.repository.clone(),
+            revision: pin.revision.clone(),
             patch_sha256: "ab".repeat(32),
             bridge_api: 1,
             systems: vec!["switch2".into()],
@@ -90,6 +88,56 @@ fn native() -> ResolvedEmulator {
                 }
             ),
         },
+    }
+}
+
+#[test]
+fn libretro_variants_preserve_supervisor_arguments_and_environment() {
+    for (fork, system) in [("azahar", "3ds"), ("melonds", "nds"), ("mgba", "gba")] {
+        let mut selected = native();
+        let pin = maintained_source(fork).unwrap();
+        selected.profile.family = pin.family;
+        selected.system = system.into();
+        selected.runtime = ResolvedRuntime::Libretro {
+            core: PathBuf::from("/core path/core.dll"),
+            python: PathBuf::from("/python path/python.exe"),
+            worker: PathBuf::from("/worker path/bridge.py"),
+        };
+        let spec = process_spec(
+            &selected,
+            "/content/game",
+            Path::new("/user root"),
+            Path::new("/log"),
+            Path::new("/receipt"),
+            5555,
+            "private-key",
+            RuntimeEnv {
+                launch_id: "launch-test",
+                adapter_failure_path: Path::new("/failure"),
+            },
+            false,
+            None,
+        );
+        assert_eq!(
+            spec.args,
+            vec![
+                "5555".to_string(),
+                Path::new("/python path/python.exe").display().to_string(),
+                Path::new("/worker path/bridge.py").display().to_string(),
+                Path::new("/core path/core.dll").display().to_string(),
+                "/content/game".into(),
+                Path::new("/user root").display().to_string(),
+                Path::new("/user root")
+                    .join("emucap-emulator-build.json")
+                    .display()
+                    .to_string(),
+                Path::new("/receipt").display().to_string()
+            ]
+        );
+        assert!(spec
+            .env
+            .iter()
+            .any(|(key, value)| key == "EMUCAP_SYSTEM" && value == system));
     }
 }
 

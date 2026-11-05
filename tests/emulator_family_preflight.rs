@@ -1,7 +1,7 @@
 use emucap::emulator_profile::{
     maintained_source, BuildProfile, EmulatorFamily, BUILD_PROFILE_SCHEMA,
 };
-use emucap::launch::emulator_family::{verify_compiled_profile, ResolvedEmulator};
+use emucap::launch::emulator_family::{verify_compiled_profile, ResolvedEmulator, ResolvedRuntime};
 use std::path::PathBuf;
 use std::process::Command;
 
@@ -14,12 +14,10 @@ fn selection(family: EmulatorFamily) -> ResolvedEmulator {
     .unwrap();
     ResolvedEmulator {
         binary: PathBuf::from(env!("CARGO_BIN_EXE_emucap-azahar")),
-        core: None,
-        python: None,
-        worker: None,
+        runtime: ResolvedRuntime::Native,
         profile_path: PathBuf::new(),
         config: None,
-        system: pin.systems[0].into(),
+        system: pin.systems[0].clone(),
         renderer: if family == EmulatorFamily::AzaharLibretro {
             "software"
         } else {
@@ -29,12 +27,12 @@ fn selection(family: EmulatorFamily) -> ResolvedEmulator {
         profile: BuildProfile {
             schema: BUILD_PROFILE_SCHEMA.into(),
             family,
-            fork: pin.fork.into(),
-            repository: pin.repository.into(),
-            revision: pin.revision.into(),
+            fork: pin.fork.clone(),
+            repository: pin.repository.clone(),
+            revision: pin.revision.clone(),
             patch_sha256: "ab".repeat(32),
             bridge_api: 1,
-            systems: vec![pin.systems[0].into()],
+            systems: vec![pin.systems[0].clone()],
             renderers: vec![if family == EmulatorFamily::AzaharLibretro {
                 "software"
             } else {
@@ -87,12 +85,13 @@ fn core_probe_rejects_invalid_library_without_creating_a_guest_workspace() {
         .unwrap();
     assert!(output.status.success());
     let mut selected = selection(EmulatorFamily::AzaharLibretro);
-    selected.python = Some(PathBuf::from(
-        String::from_utf8(output.stdout).unwrap().trim(),
-    ));
     let core = root.path().join("unrelated-library");
     std::fs::write(&core, b"not a shared library").unwrap();
-    selected.core = Some(core);
+    selected.runtime = ResolvedRuntime::Libretro {
+        python: PathBuf::from(String::from_utf8(output.stdout).unwrap().trim()),
+        core,
+        worker: PathBuf::from("unused-worker"),
+    };
     let error = verify_compiled_profile(&selected).unwrap_err();
     assert!(error.to_string().contains("native build identity"));
     assert!(!root.path().join("Azahar").exists());

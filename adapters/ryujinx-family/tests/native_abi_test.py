@@ -51,8 +51,11 @@ class Callbacks(c.Structure):
                ("request_capture", Capture), ("set_running", SetRunning)]
 
 
-def exercise(library):
+def exercise(library, allocation_faults=False):
     dll = c.CDLL(str(Path(library).resolve()))
+    if allocation_faults:
+        dll.emucap_test_fail_allocation.argtypes = [c.c_size_t]
+        dll.emucap_test_fail_allocation.restype = None
     dll.emucap_native_abi_version.restype = c.c_uint32
     assert dll.emucap_native_abi_version() == 1
     dll.emucap_native_create.argtypes = [c.POINTER(Options), c.POINTER(Callbacks), c.c_char_p, c.c_size_t]
@@ -93,6 +96,14 @@ def exercise(library):
         def capture_callback(_, identifier):
             state["capture"] = identifier
             if state["mode"] == "pending": return 1
+            if state["mode"] == "allocation-fail":
+                pixels = (c.c_uint8 * (1920 * 1080 * 4))()
+                dll.emucap_test_fail_allocation(len(pixels))
+                assert not dll.emucap_native_complete_capture(handle, identifier, 1920, 1080, pixels,
+                    len(pixels), 0, 0, 0, error, len(error))
+                assert b"bad_alloc" in error.value, error.value
+                assert dll.emucap_native_fail_capture(handle, identifier, error, len(error)), error.value
+                return 1
             if state["mode"] == "fail":
                 assert dll.emucap_native_fail_capture(handle, identifier, error, len(error))
                 return 1
@@ -206,6 +217,12 @@ def exercise(library):
             large = call("screenshot")["result"]
             assert (large["width"], large["height"]) == (1920,1080)
             assert len(base64.b64decode(large["png_base64"])) <= ((8*1024*1024-65536)*3//4)
+            if allocation_faults:
+                state["mode"] = "allocation-fail"
+                failed_allocation = call("screenshot")
+                assert not failed_allocation["ok"] and failed_allocation["error"]["kind"] == "capture_failed"
+                state["mode"] = "rgba"
+                assert call("screenshot")["ok"], "allocation failure stranded capture admission"
             assert call("status")["ok"]
             state["mode"] = "fail"
             failed = call("screenshot")
@@ -246,4 +263,6 @@ def exercise(library):
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("library")
-    exercise(parser.parse_args().library)
+    parser.add_argument("--allocation-faults", action="store_true")
+    args = parser.parse_args()
+    exercise(args.library, args.allocation_faults)

@@ -54,6 +54,7 @@ internal sealed class EmucapSession : IDisposable
     private readonly CompleteFn _complete;
     private readonly FailFn _fail;
     private readonly Callbacks _callbacks;
+    private readonly NativeError _ownerError;
     private IntPtr _handle;
     private GamepadInput _input;
     private bool _touch, _previousTouch;
@@ -101,8 +102,10 @@ internal sealed class EmucapSession : IDisposable
             Profile = EmucapBuild.Profile, Renderer = renderer, Content = content,
             Root = AppDataManager.BaseDirPath, Build = EmucapBuild.AdapterBuild, System = "switch",
         };
-        _handle = Export<CreateFn>("emucap_native_create")(ref options, ref _callbacks, IntPtr.Zero, 0);
-        if (_handle == IntPtr.Zero) throw new InvalidOperationException("Native bridge rejected frontend identity");
+        using NativeError error = new();
+        _handle = Export<CreateFn>("emucap_native_create")(ref options, ref _callbacks, error.Address, error.Size);
+        error.Check(_handle != IntPtr.Zero, "Native bridge rejected frontend identity");
+        _ownerError = new NativeError();
         window.NpadManager.ManagedInput = player => player == PlayerIndex.Player1 ? _input : null;
         window.Renderer.ScreenCaptured += Captured;
     }
@@ -128,7 +131,7 @@ internal sealed class EmucapSession : IDisposable
     }
     internal void Pump()
     {
-        if (_pump(_handle, IntPtr.Zero, 0) == 0) throw new InvalidOperationException("Native owner pump failed");
+        _ownerError.Check(_pump(_handle, _ownerError.Address, _ownerError.Size) != 0, "Native owner pump failed");
     }
     internal void UpdateTouch()
     {
@@ -154,18 +157,24 @@ internal sealed class EmucapSession : IDisposable
         ulong id = (ulong)Interlocked.Exchange(ref _captureId, 0);
         if (id == 0) return;
         try {
+            using NativeError error = new();
             fixed (byte* bytes = info.Data) {
                 if (_complete(_handle, id, (uint)info.Width, (uint)info.Height, (IntPtr)bytes, (nuint)info.Data.Length,
-                    info.IsBgra ? 1 : 0, info.FlipX ? 1 : 0, info.FlipY ? 1 : 0, IntPtr.Zero, 0) != 0) return;
+                    info.IsBgra ? 1 : 0, info.FlipX ? 1 : 0, info.FlipY ? 1 : 0, error.Address, error.Size) != 0) return;
             }
+            Console.Error.WriteLine("Native capture completion failed: " + error.Message);
         } catch { }
-        _fail(_handle, id, IntPtr.Zero, 0);
+        try {
+            using NativeError error = new();
+            if (_fail(_handle, id, error.Address, error.Size) == 0)
+                Console.Error.WriteLine("Native capture failure reporting failed: " + error.Message);
+        } catch { }
     }
     internal void Stop()
     {
         if (_stopped) return;
         _stopped = true;
-        if (_stop(_handle, IntPtr.Zero, 0) == 0) throw new InvalidOperationException("Native stop failed");
+        _ownerError.Check(_stop(_handle, _ownerError.Address, _ownerError.Size) != 0, "Native stop failed");
         UpdateTouch();
         _window.NpadManager.Update();
     }
@@ -178,5 +187,6 @@ internal sealed class EmucapSession : IDisposable
         _handle = IntPtr.Zero;
         GC.KeepAlive(_callbacks);
         NativeLibrary.Free(_library);
+        _ownerError.Dispose();
     }
 }

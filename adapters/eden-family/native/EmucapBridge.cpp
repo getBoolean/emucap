@@ -12,6 +12,7 @@
 #include <unistd.h>
 #endif
 #include "EmucapBridge.h"
+#include "EmucapBridge.encoder.h"
 #include "emucap_front_auth.h"
 #include "emucap_native_failure.h"
 #include <algorithm>
@@ -322,6 +323,7 @@ struct Bridge::Impl {
     std::mutex queue_mutex;
     std::deque<std::shared_ptr<Job>> queue;
     std::shared_ptr<CaptureState> capture=std::make_shared<CaptureState>();
+    std::shared_ptr<CaptureEncoder> encoder=std::make_shared<CaptureEncoder>();
     explicit Impl(Config c,Hooks h):config(std::move(c)),hooks(std::move(h)) {}
     static void Finish(const std::shared_ptr<Job>& job,Json response) {
         std::lock_guard lock(job->mutex);job->response=std::move(response);
@@ -404,7 +406,10 @@ struct Bridge::Impl {
                 const auto capture_id=config.launch_id+"-capture-"+std::to_string(++capture->sequence);
                 capture->pending=true;
                 lock.unlock();
-                hooks.capture(pixels,[shared,pixels,job,id,request_counter,capture_id](bool invert_y) {
+                auto owned_encoder=encoder;
+                hooks.capture(pixels,[shared,pixels,job,id,request_counter,capture_id,owned_encoder](bool invert_y) {
+                    try {
+                    const auto encode=[shared,pixels,job,id,request_counter,capture_id,invert_y] {
                     try {
                         auto png=EncodePng(pixels->width,pixels->height,pixels->pixels,invert_y);
                         auto image=Json{{"width",pixels->width},{"height",pixels->height},{"png_base64",Base64(png)},
@@ -412,6 +417,12 @@ struct Bridge::Impl {
                             {"capture_request_counter",request_counter},{"capture_id",capture_id},{"fresh",true}};
                         std::lock_guard guard(shared->mutex);shared->pending=false;
                         if(shared->active) {shared->last=image;Finish(job,Success(id,std::move(image)));}
+                    } catch(const std::exception& error) {
+                        std::lock_guard guard(shared->mutex);shared->pending=false;
+                        if(shared->active) Finish(job,Error(id,"capture_failed",error.what()));
+                    }
+                    };
+                    if(!owned_encoder->Submit(encode)) throw std::runtime_error("capture encoder unavailable");
                     } catch(const std::exception& error) {
                         std::lock_guard guard(shared->mutex);shared->pending=false;
                         if(shared->active) Finish(job,Error(id,"capture_failed",error.what()));
@@ -596,11 +607,12 @@ struct Bridge::Impl {
 Bridge::Bridge(Config config,Hooks hooks):impl(std::make_unique<Impl>(std::move(config),std::move(hooks))) {
     impl->thread=std::thread([this]{impl->Run();});
 }
-Bridge::~Bridge() {try {Stop();} catch(...) {}}
+Bridge::~Bridge() {try {Stop();} catch(...) {}impl->encoder->Join();}
 void Bridge::Pump() {impl->Pump();}
 void Bridge::Stop() {
     if(!impl||impl->stop.exchange(true)) return;
     {std::lock_guard lock(impl->capture->mutex);impl->capture->active=false;}
+    impl->encoder->Close();
     std::exception_ptr cleanup_error;
     try {impl->hooks.input({});} catch(...) {cleanup_error=std::current_exception();}
     try {impl->hooks.touch({});} catch(...) {if(!cleanup_error) cleanup_error=std::current_exception();}

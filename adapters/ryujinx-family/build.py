@@ -8,11 +8,13 @@ from pathlib import Path
 import platform
 import shutil
 import subprocess
-import tempfile
+import sys
 import urllib.request
 
 HERE = Path(__file__).resolve().parent
 REPO = HERE.parents[1]
+sys.path.insert(0, str(HERE.parent / '_common'))
+from build_support import maintained_source, verify_applied_patch as shared_verify_patch
 JSON_URL = 'https://raw.githubusercontent.com/nlohmann/json/v3.12.0/single_include/nlohmann/json.hpp'
 JSON_SHA256 = 'aaf127c04cb31c406e5b04a63f1ae89369fccde6d8fa7cdda1ed4f32dfc5de63'
 
@@ -30,24 +32,8 @@ def output(*args, cwd=None):
     return subprocess.check_output([str(a) for a in args], cwd=cwd, text=True).strip()
 
 def verify_applied_patch(source, patch):
-    paths = [line[6:] for line in patch.read_text(encoding='utf-8').splitlines() if line.startswith('+++ b/')]
-    if not paths or len(paths) != len(set(paths)):
-        raise RuntimeError('patch must modify existing source files exactly once')
-    if set(output('git', 'diff', '--name-only', 'HEAD', cwd=source).splitlines()) != set(paths):
-        raise RuntimeError('source has edits outside the exact selected patch')
-    with tempfile.TemporaryDirectory(prefix='emucap-ryujinx-verify-') as temporary:
-        baseline = Path(temporary)
-        for name in paths:
-            relative = Path(name)
-            if relative.is_absolute() or '..' in relative.parts:
-                raise RuntimeError('unsafe patch path')
-            target = baseline / relative
-            target.parent.mkdir(parents=True, exist_ok=True)
-            target.write_bytes(subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=source))
-        run('git', 'apply', patch, cwd=baseline)
-        for name in paths:
-            if (source / name).read_bytes().replace(b'\r\n', b'\n') != (baseline / name).read_bytes().replace(b'\r\n', b'\n'):
-                raise RuntimeError('source differs from the exact selected patch: ' + name)
+    return shared_verify_patch(source, patch, output=output, run=run)
+
 
 def patch_digest(patch, header):
     files = [patch] + sorted((HERE / 'managed').glob('*.cs')) + sorted((HERE / 'native').glob('*'))
@@ -88,7 +74,7 @@ def main():
     args = parser.parse_args()
     if args.jobs < 1: parser.error('--jobs must be positive')
     if args.profile and not args.patch: parser.error('custom profiles require an explicit --patch')
-    profile = validate_profile(json.loads((args.profile or HERE / 'profiles' / (args.fork + '.json')).read_text(encoding='utf-8-sig')), bool(args.profile))
+    profile = validate_profile((json.loads(args.profile.read_text(encoding='utf-8-sig')) if args.profile else maintained_source(args.fork)), bool(args.profile))
     patch = (args.patch or HERE / 'patches' / (profile['fork'] + '.patch')).resolve()
     source = (args.source or HERE / 'work' / (profile['fork'] + '-src')).resolve()
     destination = (args.output or HERE / 'build' / profile['fork'] / 'bin').resolve()

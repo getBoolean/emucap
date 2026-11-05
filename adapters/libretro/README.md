@@ -12,6 +12,9 @@ for melonDS, not the stock melonDS 1.1 desktop executable.
 
 ## Build and select
 
+Maintained pins and core target names live in `profiles/*.json`. The build
+helper reads these descriptors, and Rust embeds the same pin data for admission.
+
 Use a recursive checkout of the exact pin and an out-of-source CMake build.
 For mGBA configure `BUILD_LIBRETRO=ON`, `SKIP_LIBRARY=ON`, `BUILD_QT=OFF`,
 `BUILD_SDL=OFF`, `CMAKE_BUILD_TYPE=Release`; optional external dependencies may

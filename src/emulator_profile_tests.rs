@@ -2,14 +2,49 @@ use super::*;
 use serde_json::json;
 
 #[test]
+fn every_builder_descriptor_is_admitted_without_a_parallel_pin_table() {
+    let pins = maintained_sources();
+    let mut forks = std::collections::BTreeSet::new();
+    assert_eq!(pins.len(), 7);
+    for pin in pins {
+        assert!(forks.insert(&pin.fork));
+        let profile = BuildProfile {
+            schema: BUILD_PROFILE_SCHEMA.into(),
+            family: pin.family,
+            fork: pin.fork.clone(),
+            repository: pin.repository.clone(),
+            revision: pin.revision.clone(),
+            systems: pin.systems.clone(),
+            renderers: vec![if matches!(
+                pin.family,
+                EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
+            ) {
+                "software".into()
+            } else {
+                "vulkan".into()
+            }],
+            patch_sha256: "ab".repeat(32),
+            bridge_api: BRIDGE_API_VERSION,
+            cpu_features: vec![],
+            target: "test-host".into(),
+        };
+        assert!(
+            profile.validate().is_ok(),
+            "{} descriptor rejected",
+            pin.fork
+        );
+    }
+}
+
+#[test]
 fn software_cores_are_pinned_and_cannot_claim_other_systems() {
     for (fork, system, wrong) in [("mgba", "gba", "nds"), ("melonds", "nds", "gba")] {
         let pin = maintained_source(fork).unwrap();
         let mut profile = eden();
         profile.family = EmulatorFamily::SoftwareLibretro;
         profile.fork = fork.into();
-        profile.repository = pin.repository.into();
-        profile.revision = pin.revision.into();
+        profile.repository = pin.repository.clone();
+        profile.revision = pin.revision.clone();
         profile.systems = vec![system.into()];
         profile.renderers = vec!["software".into()];
         assert!(profile.validate_selection(system, "software").is_ok());
@@ -24,8 +59,8 @@ fn eden() -> BuildProfile {
         schema: BUILD_PROFILE_SCHEMA.into(),
         family: EmulatorFamily::EdenFamily,
         fork: "eden-nx2".into(),
-        repository: maintained_source("eden-nx2").unwrap().repository.into(),
-        revision: maintained_source("eden-nx2").unwrap().revision.into(),
+        repository: maintained_source("eden-nx2").unwrap().repository.clone(),
+        revision: maintained_source("eden-nx2").unwrap().revision.clone(),
         patch_sha256: "ab".repeat(32),
         bridge_api: BRIDGE_API_VERSION,
         systems: vec!["switch".into(), "switch2".into()],
@@ -113,9 +148,9 @@ fn ryubing_profile_is_distinct_pinned_and_switch_one_only() {
     assert_eq!(pin.revision, "a61a42681119bf15fe8f3297677ae48bda83e70f");
     let mut profile = eden();
     profile.family = EmulatorFamily::RyujinxFamily;
-    profile.fork = pin.fork.into();
-    profile.repository = pin.repository.into();
-    profile.revision = pin.revision.into();
+    profile.fork = pin.fork.clone();
+    profile.repository = pin.repository.clone();
+    profile.revision = pin.revision.clone();
     profile.systems = vec!["switch".into()];
     assert!(profile.validate_selection("switch", "vulkan").is_ok());
     assert_eq!(profile.family.adapter(), "ryujinx-family-native");

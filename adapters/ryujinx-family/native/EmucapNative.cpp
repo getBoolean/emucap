@@ -111,25 +111,39 @@ void EMUCAP_CALL emucap_native_destroy(EmucapNativeHandle* handle) {
 int32_t EMUCAP_CALL emucap_native_complete_capture(EmucapNativeHandle* handle,uint64_t id,
     uint32_t width,uint32_t height,const uint8_t* data,size_t length,int32_t bgra,
     int32_t flip_x,int32_t flip_y,char* error,size_t size) {
-    return Guard(error,size,[&] {Handle(handle);std::lock_guard lock(handle->mutex);Pending(handle,id);
+    return Guard(error,size,[&] {Handle(handle);
+        std::function<void(bool)> done;
+        {
+        std::lock_guard lock(handle->mutex);Pending(handle,id);
         if(!width||!height||width>1920||height>1080||
             uint64_t(width)*height*4>MaxFrameBytes||length!=uint64_t(width)*height*4||!data||
             (bgra!=0&&bgra!=1)||(flip_x!=0&&flip_x!=1)||(flip_y!=0&&flip_y!=1))
             throw std::invalid_argument("invalid capture dimensions, bytes or layout flags");
-        auto& pixels=*handle->pixels;pixels.width=width;pixels.height=height;pixels.pixels.resize(length);
+        }
+        // Keep the pending operation recoverable if normalization allocation fails.
+        std::vector<uint8_t> normalized(length);
         for(uint32_t y=0;y<height;++y) for(uint32_t x=0;x<width;++x) {
             const size_t source=(size_t(flip_y?height-1-y:y)*width+(flip_x?width-1-x:x))*4;
             const size_t dest=(size_t(y)*width+x)*4;
-            pixels.pixels[dest]=data[source+(bgra?0:2)];pixels.pixels[dest+1]=data[source+1];
-            pixels.pixels[dest+2]=data[source+(bgra?2:0)];pixels.pixels[dest+3]=data[source+3];
+            normalized[dest]=data[source+(bgra?0:2)];normalized[dest+1]=data[source+1];
+            normalized[dest+2]=data[source+(bgra?2:0)];normalized[dest+3]=data[source+3];
         }
-        auto done=std::move(handle->complete);handle->pending_id=0;handle->pixels.reset();done(false);
+        {
+        std::lock_guard lock(handle->mutex);Pending(handle,id);
+        auto& pixels=*handle->pixels;pixels.width=width;pixels.height=height;pixels.pixels.swap(normalized);
+        done=std::move(handle->complete);handle->pending_id=0;handle->pixels.reset();
+        }
+        done(false);
     });
 }
 int32_t EMUCAP_CALL emucap_native_fail_capture(EmucapNativeHandle* handle,uint64_t id,char* error,size_t size) {
-    return Guard(error,size,[&] {Handle(handle);std::lock_guard lock(handle->mutex);Pending(handle,id);
-        handle->pixels->pixels.clear();auto done=std::move(handle->complete);
-        handle->pending_id=0;handle->pixels.reset();done(false);
+    return Guard(error,size,[&] {Handle(handle);std::function<void(bool)> done;
+        {
+        std::lock_guard lock(handle->mutex);Pending(handle,id);
+        handle->pixels->pixels.clear();done=std::move(handle->complete);
+        handle->pending_id=0;handle->pixels.reset();
+        }
+        done(false);
     });
 }
 }

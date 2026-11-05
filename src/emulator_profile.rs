@@ -42,77 +42,62 @@ pub struct BuildProfile {
     pub target: String,
 }
 
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Deserialize)]
 pub struct SourcePin {
     pub family: EmulatorFamily,
-    pub fork: &'static str,
-    pub repository: &'static str,
-    pub reference: &'static str,
-    pub revision: &'static str,
-    pub systems: &'static [&'static str],
+    pub fork: String,
+    pub repository: String,
+    pub reference: String,
+    pub revision: String,
+    pub systems: Vec<String>,
 }
 
-pub const MAINTAINED_SOURCES: &[SourcePin] = &[
-    SourcePin {
-        family: EmulatorFamily::SoftwareLibretro,
-        fork: "mgba",
-        repository: "https://github.com/mgba-emu/mgba.git",
-        reference: "0.10.5",
-        revision: "26b7884bc25a5933960f3cdcd98bac1ae14d42e2",
-        systems: &["gba"],
-    },
-    SourcePin {
-        family: EmulatorFamily::SoftwareLibretro,
-        fork: "melonds",
-        repository: "https://github.com/JesseTG/melonds-ds.git",
-        reference: "v1.4.0",
-        revision: "f394adbacb5722ee97c1b37c8064da9a25818310",
-        systems: &["nds"],
-    },
-    SourcePin {
-        family: EmulatorFamily::RyujinxFamily,
-        fork: "ryubing",
-        repository: "https://git.ryujinx.app/projects/Ryubing.git",
-        reference: "master",
-        revision: "a61a42681119bf15fe8f3297677ae48bda83e70f",
-        systems: &["switch"],
-    },
-    SourcePin {
-        family: EmulatorFamily::AzaharLibretro,
-        fork: "azahar",
-        repository: "https://github.com/azahar-emu/azahar.git",
-        reference: "master",
-        revision: "9c38437daad90a2f05f55a047d04d4073a476456",
-        systems: &["3ds"],
-    },
-    SourcePin {
-        family: EmulatorFamily::EdenFamily,
-        fork: "eden",
-        repository: "https://git.eden-emu.dev/eden-emu/eden.git",
-        reference: "master",
-        revision: "5df599128d6828fa0e42968909da848c255d22b1",
-        systems: &["switch"],
-    },
-    SourcePin {
-        family: EmulatorFamily::EdenFamily,
-        fork: "eden-nx2",
-        repository: "https://git.eden-emu.dev/Takoroka/eden-nx2.git",
-        reference: "eden-nx2",
-        revision: "50fa86bbbc403ad565eb44fcc281f16f77c69e15",
-        systems: &["switch", "switch2"],
-    },
-    SourcePin {
-        family: EmulatorFamily::EdenFamily,
-        fork: "eglantine",
-        repository: "https://github.com/Djihads80/Eglantine.git",
-        reference: "nx2",
-        revision: "c54bc2289bfffda7fa3cc4c3a8cf522d84a10fd4",
-        systems: &["switch", "switch2"],
-    },
-];
+pub fn maintained_sources() -> &'static [SourcePin] {
+    static SOURCES: std::sync::OnceLock<Vec<SourcePin>> = std::sync::OnceLock::new();
+    SOURCES.get_or_init(|| {
+        [
+            (
+                EmulatorFamily::AzaharLibretro,
+                include_str!("../adapters/azahar/upstream.lock"),
+            ),
+            (
+                EmulatorFamily::SoftwareLibretro,
+                include_str!("../adapters/libretro/profiles/mgba.json"),
+            ),
+            (
+                EmulatorFamily::SoftwareLibretro,
+                include_str!("../adapters/libretro/profiles/melonds.json"),
+            ),
+            (
+                EmulatorFamily::EdenFamily,
+                include_str!("../adapters/eden-family/profiles/eden.json"),
+            ),
+            (
+                EmulatorFamily::EdenFamily,
+                include_str!("../adapters/eden-family/profiles/eden-nx2.json"),
+            ),
+            (
+                EmulatorFamily::EdenFamily,
+                include_str!("../adapters/eden-family/profiles/eglantine.json"),
+            ),
+            (
+                EmulatorFamily::RyujinxFamily,
+                include_str!("../adapters/ryujinx-family/profiles/ryubing.json"),
+            ),
+        ]
+        .into_iter()
+        .map(|(family, source)| {
+            let mut value: Value =
+                serde_json::from_str(source).expect("valid maintained source descriptor");
+            value["family"] = serde_json::to_value(family).unwrap();
+            serde_json::from_value(value).expect("complete maintained source descriptor")
+        })
+        .collect()
+    })
+}
 
 pub fn maintained_source(fork: &str) -> Option<&'static SourcePin> {
-    MAINTAINED_SOURCES.iter().find(|pin| pin.fork == fork)
+    maintained_sources().iter().find(|pin| pin.fork == fork)
 }
 
 fn hex_digest(value: &str, lengths: &[usize]) -> bool {
@@ -177,7 +162,7 @@ impl BuildProfile {
                 || self
                     .systems
                     .iter()
-                    .any(|system| !pin.systems.contains(&system.as_str()))
+                    .any(|system| !pin.systems.contains(system))
             {
                 return Err("maintained fork profile does not match its pinned source".into());
             }

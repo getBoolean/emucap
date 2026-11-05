@@ -331,3 +331,34 @@ src/emulator_profile_tests.rs
 src/launch/emulator_family.rs
 src/launch/emulator_family_tests.rs
 ```
+
+## Quality review follow-up
+
+The maintained source descriptors now supply both Python build recipes and
+Rust's embedded admission pins. Exact applied-patch verification is shared,
+while each recipe retains its untracked-file policy. Resolved launches encode
+native/libretro variants directly. Bounded native UTF-8 diagnostics survive
+the managed boundary.
+
+Native screenshot callbacks now queue encoding on one bounded worker.
+Normalization and completion run outside the Ryujinx handle lock. A failed
+normalization allocation retains the pending operation for failure completion;
+the synthetic ABI test injects that allocation failure and requires the next
+screenshot to succeed. Stop disables publication and closes the queue;
+destruction joins the worker. A blocked-worker test covers nonblocking queue
+closure, bounded admission and discarded queued work. No speedup is claimed.
+
+Fresh Windows guest runs covered Ryubing (112 checkpoints), Eden (106),
+melonDS DS (49) and mGBA (37), each with a completed managed stop. The capability
+guard requires the maintained family's minimum button set: Eden's configured
+Pro Controller excludes SL/SR, while Ryujinx exposes them. No UI was changed.
+These runs do not extend the recorded hardware, exact-step or Switch 2 limits.
+
+The full serial Rust suite passed 1,969 tests, with four ignored; Clippy and
+formatting passed. A concurrent suite run failed in a socket-disconnect test;
+that test passed alone and the full serial run passed. Its cause remains
+undetermined. The host Input Lab suite passed 11 tests. Native synthetic checks,
+managed diagnostic tests and real frontend builds remain separate proof layers.
+The ten-stage native fast lane passed on Windows and on Linux in a named Compose
+container with folder bind mounts, including injected allocation recovery.
+This Linux result is synthetic ABI/protocol proof; no Linux guest rerun was made.

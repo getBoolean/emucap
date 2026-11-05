@@ -1,10 +1,30 @@
 // SPDX-License-Identifier: GPL-3.0-or-later
 #include "EmucapBridge.h"
+#include "EmucapBridge.encoder.h"
 #include <cassert>
+#include <atomic>
+#include <future>
 #include <iostream>
 
 using namespace EmucapEden;
 int main() {
+    {
+        using namespace std::chrono_literals;
+        CaptureEncoder encoder;
+        std::promise<void> entered, release;
+        auto gate=release.get_future().share();
+        std::atomic<int> discarded{0};
+        assert(encoder.Submit([&] {entered.set_value();gate.wait();}));
+        assert(entered.get_future().wait_for(2s)==std::future_status::ready);
+        assert(encoder.Submit([&] {++discarded;}));
+        assert(!encoder.Submit([&] {++discarded;}));
+        auto closing=std::async(std::launch::async,[&] {encoder.Close();});
+        const bool closed_without_encoder=closing.wait_for(2s)==std::future_status::ready;
+        release.set_value();closing.get();encoder.Join();
+        assert(closed_without_encoder);
+        assert(discarded==0);
+        assert(!encoder.Submit([&] {++discarded;}));
+    }
     auto state = DecodeInput(Json{{"port",0},{"buttons",{"a","plus"}},
                                  {"axes",{{"stick_x",-32767},{"cstick_y",32767}}}});
     assert(state.buttons[0] && state.buttons[10]);

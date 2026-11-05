@@ -10,10 +10,11 @@ import re
 import shutil
 import subprocess
 import sys
-import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parent.parent
+sys.path.insert(0, str(HERE.parent / '_common'))
+from build_support import maintained_source, verify_applied_patch as shared_verify_patch
 
 
 def run(*args, cwd=None):
@@ -36,26 +37,12 @@ def patch_digest(patch):
 
 
 def verify_applied_patch(source, patch):
-    """Compare file bytes with a fresh application, avoiding diff algorithm ambiguity."""
-    paths = [line[6:] for line in patch.read_text(encoding='utf-8').splitlines()
-             if line.startswith('+++ b/')]
-    changed = output('git', 'diff', '--name-only', 'HEAD', cwd=source).splitlines()
-    if not paths or len(paths) != len(set(paths)) or set(changed) != set(paths):
-        raise RuntimeError('source has edits outside the maintained patch')
-    with tempfile.TemporaryDirectory(prefix='emucap-patch-verify-') as temporary:
-        baseline = pathlib.Path(temporary)
-        for name in paths:
-            relative = pathlib.PurePosixPath(name)
-            if relative.is_absolute() or '..' in relative.parts:
-                raise RuntimeError('patch contains an unsafe source path')
-            destination = baseline / relative
-            destination.parent.mkdir(parents=True, exist_ok=True)
-            destination.write_bytes(subprocess.check_output(['git', 'show', 'HEAD:' + name], cwd=source))
-        run('git', 'apply', patch, cwd=baseline)
-        for name in paths:
-            expected = (baseline / name).read_bytes().replace(b'\r\n', b'\n')
-            if (source / name).read_bytes().replace(b'\r\n', b'\n') != expected:
-                raise RuntimeError('source has edits beyond the exact maintained patch: ' + name)
+    return shared_verify_patch(source, patch, output=output, run=run,
+        path_type=pathlib.PurePosixPath,
+        invalid_patch='source has edits outside the maintained patch',
+        outside='source has edits outside the maintained patch',
+        unsafe='patch contains an unsafe source path',
+        changed='source has edits beyond the exact maintained patch: ')
 
 
 def cpu_features_for(target):
@@ -174,7 +161,7 @@ def main():
     args = parser.parse_args()
     if bool(args.profile) != bool(args.patch):
         parser.error('--profile and --patch must be selected together')
-    profile = json.loads((args.profile or HERE / 'profiles' / (args.fork + '.json')).read_text(encoding='utf-8'))
+    profile = json.loads(args.profile.read_text(encoding='utf-8')) if args.profile else maintained_source(args.fork)
     if (not re.fullmatch(r'[A-Za-z0-9_.-]{1,128}', profile.get('fork', '')) or
             not re.fullmatch(r'(?:[a-fA-F0-9]{40}|[a-fA-F0-9]{64})', profile.get('revision', '')) or
             not isinstance(profile.get('repository'), str) or not 0 < len(profile['repository']) <= 2048 or

@@ -1,0 +1,9 @@
+{
+  "fork": "mgba",
+  "repository": "https://github.com/mgba-emu/mgba.git",
+  "reference": "0.10.5",
+  "revision": "26b7884bc25a5933960f3cdcd98bac1ae14d42e2",
+  "systems": ["gba"],
+  "renderers": ["software"],
+  "target": "mgba_libretro"
+}

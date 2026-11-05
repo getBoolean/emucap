@@ -23,6 +23,7 @@ def ryujinx_abi_command(cxx, library, include):
     command += ['-static'] if os.name == 'nt' else ['-fPIC']
     command += ['-I' + str(ROOT / 'adapters/_common'), '-I' + str(include),
                 str(adapter / 'native/EmucapNative.cpp'),
+                str(adapter / 'tests/allocation_fault.cpp'),
                 str(ROOT / 'adapters/eden-family/native/EmucapBridge.cpp'),
                 str(ROOT / 'adapters/_common/emucap_native_failure.cpp'), '-o', str(library)]
     if os.name == 'nt':
@@ -102,7 +103,7 @@ def main():
             library = root / ('emucap-native' + suffix)
             check('ryujinx-native-build', ryujinx_abi_command(args.cxx, library, include))
             check('ryujinx-native-endpoint', [sys.executable,
-                  'adapters/ryujinx-family/tests/native_abi_test.py', str(library)])
+                  'adapters/ryujinx-family/tests/native_abi_test.py', str(library), '--allocation-faults'])
             result['ryujinx_fixture'] = {'sha256': hashlib.sha256(library.read_bytes()).hexdigest(),
                                         'loaded_and_exercised': True}
         result['status'] = 'passed'

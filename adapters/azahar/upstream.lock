@@ -1,4 +1,6 @@
 {
+  "fork": "azahar",
+  "systems": ["3ds"],
   "repository": "https://github.com/azahar-emu/azahar.git",
   "revision": "9c38437daad90a2f05f55a047d04d4073a476456",
   "reference": "master",

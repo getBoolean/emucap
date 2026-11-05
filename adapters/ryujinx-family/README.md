@@ -82,3 +82,20 @@ The advertised `ryujinx.execution-pause.scheduler-state` contract variation
 means successful pause acknowledges the native scheduler's paused state.
 Responses and status report `frozen: false`: this boundary does not guarantee
 that all in-flight work has drained or that free progress is excluded.
+
+Maintained source pins are read from `profiles/ryubing.json` by the build recipe
+and embedded from that same descriptor by Rust admission. Exact applied-patch
+verification lives in `adapters/_common/build_support.py`; family-specific
+untracked-file policy stays in the recipe.
+
+The shared native capture worker has a bounded queue. Renderer completion owns
+and normalizes pixel bytes, then queues PNG encoding; it does not encode under
+the native handle lock. Stop prevents publication and closes the queue without
+waiting for active encoding; bridge destruction joins the worker. Native error
+messages cross the managed boundary through a bounded UTF-8 buffer.
+
+Run the managed diagnostic regression separately from native ABI or live tests:
+
+```powershell
+dotnet run --project adapters/ryujinx-family/tests/managed-errors/managed-errors.csproj --configuration Release
+```

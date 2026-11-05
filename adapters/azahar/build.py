@@ -9,6 +9,8 @@ import subprocess
 import sys
 
 HERE = Path(__file__).resolve().parent
+sys.path.insert(0, str(HERE.parent / '_common'))
+from build_support import maintained_source
 
 
 def run(*args, cwd=None, capture=False):
@@ -44,7 +46,7 @@ def compiler_target(cxx):
 
 
 def prepare(source, build, cxx):
-    lock = json.loads((HERE / 'upstream.lock').read_text(encoding='utf-8'))
+    lock = maintained_source('azahar')
     if not source.exists():
         source.mkdir(parents=True)
         run('git', 'init', source)

@@ -29,14 +29,37 @@ pub struct EmulatorOptions {
 #[derive(Debug, Clone)]
 pub struct ResolvedEmulator {
     pub binary: PathBuf,
-    pub core: Option<PathBuf>,
-    pub python: Option<PathBuf>,
-    pub worker: Option<PathBuf>,
+    pub runtime: ResolvedRuntime,
     pub profile_path: PathBuf,
     pub profile: BuildProfile,
     pub config: Option<PathBuf>,
     pub system: String,
     pub renderer: String,
+}
+
+#[derive(Debug, Clone)]
+pub enum ResolvedRuntime {
+    Libretro {
+        core: PathBuf,
+        python: PathBuf,
+        worker: PathBuf,
+    },
+    Native,
+}
+
+impl ResolvedRuntime {
+    pub fn core(&self) -> Option<&Path> {
+        match self {
+            Self::Libretro { core, .. } => Some(core),
+            Self::Native => None,
+        }
+    }
+    pub fn python(&self) -> Option<&Path> {
+        match self {
+            Self::Libretro { python, .. } => Some(python),
+            Self::Native => None,
+        }
+    }
 }
 
 fn invalid(message: impl Into<String>) -> io::Error {
@@ -175,10 +198,7 @@ fn resolve_python(explicit: Option<&str>) -> io::Result<PathBuf> {
 /// Query native identity without loading a guest, before replacement can signal the old generation.
 pub fn verify_compiled_profile(selected: &ResolvedEmulator) -> io::Result<()> {
     let mut command;
-    if matches!(
-        selected.profile.family,
-        EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
-    ) {
+    if let ResolvedRuntime::Libretro { core, python, .. } = &selected.runtime {
         let mut host = Command::new(&selected.binary);
         host.arg("--host-info");
         let value: serde_json::Value =
@@ -190,14 +210,9 @@ pub fn verify_compiled_profile(selected: &ResolvedEmulator) -> io::Result<()> {
         {
             return Err(invalid("incompatible Azahar supervisor API"));
         }
-        command = Command::new(
-            selected
-                .python
-                .as_ref()
-                .ok_or_else(|| invalid("Azahar interpreter missing"))?,
-        );
+        command = Command::new(python);
         command.args(["-I","-c", "import ctypes,json,os,pathlib,sys; p=pathlib.Path(sys.argv[1]); d=os.add_dll_directory(str(p.parent)) if sys.platform=='win32' else None; c=ctypes.CDLL(str(p)); f=c.emucap_get_build_profile_json; f.restype=ctypes.c_char_p; f.argtypes=[]; print(json.dumps(json.loads(f())))"])
-            .arg(selected.core.as_ref().ok_or_else(||invalid("Azahar core missing"))?);
+            .arg(core);
     } else {
         command = Command::new(&selected.binary);
         command.arg("--emucap-build-profile");
@@ -394,9 +409,15 @@ pub fn resolve(
     };
     Ok(ResolvedEmulator {
         binary,
-        core,
-        python,
-        worker,
+        runtime: match (core, python, worker) {
+            (Some(core), Some(python), Some(worker)) => ResolvedRuntime::Libretro {
+                core,
+                python,
+                worker,
+            },
+            (None, None, None) => ResolvedRuntime::Native,
+            _ => return Err(invalid("incomplete libretro runtime")),
+        },
         profile_path,
         profile,
         config,
@@ -436,15 +457,17 @@ pub fn process_spec(
     if let Some(name) = name {
         spec = spec.env("EMUCAP_NAME", name);
     }
-    if matches!(
-        selected.profile.family,
-        EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
-    ) {
+    if let ResolvedRuntime::Libretro {
+        core,
+        python,
+        worker,
+    } = &selected.runtime
+    {
         spec.args([
             port.to_string(),
-            selected.python.as_ref().unwrap().display().to_string(),
-            selected.worker.as_ref().unwrap().display().to_string(),
-            selected.core.as_ref().unwrap().display().to_string(),
+            python.display().to_string(),
+            worker.display().to_string(),
+            core.display().to_string(),
             content.into(),
             user_root.display().to_string(),
             user_root
@@ -553,10 +576,7 @@ pub fn launch(
         name,
     );
     let pid = super::spawn_detached(&spec)?;
-    if !matches!(
-        selected.profile.family,
-        EmulatorFamily::AzaharLibretro | EmulatorFamily::SoftwareLibretro
-    ) {
+    if matches!(selected.runtime, ResolvedRuntime::Native) {
         return Ok(StartedEmulator {
             emulator_pid: pid,
             bridge_pid: None,
