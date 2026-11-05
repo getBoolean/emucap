@@ -171,7 +171,8 @@ def exercise(library):
             hello = call("hello")["result"]
             assert hello["adapter"] == "ryujinx-family-native"
             assert hello["host_build"]["family"] == "ryujinx-family"
-            assert hello["contracts"]["active_exceptions"] == ["ryujinx.input-touch.persistent-only"]
+            assert hello["contracts"]["active_exceptions"] == [
+                "ryujinx.input-touch.persistent-only", "ryujinx.execution-pause.scheduler-state"]
             assert hello["input_buttons"] == list(("a b x y lstick rstick l r zl zr plus minus left up right down sl sr").split())
             assert "pause" in hello["methods"] and "resume" in hello["methods"] and "step" not in hello["methods"]
             assert hello["touch_capability"]["bounds"] == dict(x_min=0,x_max=1279,y_min=0,y_max=719)
@@ -210,7 +211,13 @@ def exercise(library):
             failed = call("screenshot")
             assert not failed["ok"] and failed["error"]["kind"] == "capture_failed"
             assert not call("pause", {"cpu": "arm9"})["ok"] and state["running"]
-            assert call("pause")["ok"] and not state["running"]
+            paused = call("pause")
+            assert paused["ok"] and not state["running"]
+            status = call("status")["result"]
+            for result in (paused["result"], status):
+                assert result["state"] == "paused" and result["paused"] is True
+                assert result["frozen"] is False
+            assert status["contracts"] == hello["contracts"]
             assert not call("screenshot")["result"]["fresh"]
             assert not call("resume", {"cpu": "arm9"})["ok"] and not state["running"]
             assert call("resume")["ok"] and state["running"]

@@ -4,6 +4,22 @@
   "contract_version": 3,
   "exceptions": [
     {
+      "id": "ryujinx.execution-pause.scheduler-state",
+      "feature": "execution.pause",
+      "kind": "variation_binding",
+      "targets": ["EXEC.PAUSE.HALT.1", "EXEC.PAUSE.PERSIST.1"],
+      "scope": {"adapter": "ryujinx-family-native", "systems": ["switch"]},
+      "activation": {"method": "pause"},
+      "constraints": {
+        "execution.pause.completion_boundary": "native_scheduler_state_acknowledged",
+        "execution.pause.terminal_state": "paused",
+        "execution.pause.frozen": false,
+        "execution.pause.free_progress_excluded": false,
+        "execution.pause.persistence": "until_resume_or_session_end"
+      },
+      "verification": ["contract-test:ryujinx-pause-contract-is-strictly-scoped", "native-abi:ryujinx-pause-status"]
+    },
+    {
       "id": "libretro.input-touch.persistent-only",
       "feature": "input.touch-wire",
       "kind": "capability_absent",

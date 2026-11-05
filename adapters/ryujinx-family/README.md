@@ -78,3 +78,7 @@ from the connected `status`; pause capture returns the cached completed image.
 Capture before pausing if an image is needed: without a completed requested
 capture, paused screenshot is unavailable. Pause is execution state and persists
 across attachment changes; reconnect does not implicitly resume the guest.
+The advertised `ryujinx.execution-pause.scheduler-state` contract variation
+means successful pause acknowledges the native scheduler's paused state.
+Responses and status report `frozen: false`: this boundary does not guarantee
+that all in-flight work has drained or that free progress is excluded.

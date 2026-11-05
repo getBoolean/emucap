@@ -359,6 +359,11 @@ struct Bridge::Impl {
             if(config.allowed_buttons & (1u << i)) result["input_buttons"].push_back(Buttons[i]);
         if(hooks.set_running) {
             result["methods"].push_back("pause");result["methods"].push_back("resume");
+            if(config.family=="ryujinx-family") {
+                result["contracts"]["active_exceptions"].push_back("ryujinx.execution-pause.scheduler-state");
+                result["capability_notes"].push_back(
+                    "Pause acknowledges native scheduler state; frozen execution and exclusion of in-flight progress are not guaranteed.");
+            }
         }
         if(config.family=="ryujinx-family") result["capability_notes"][1]=
             "Progress counts successful native renderer presentations, not guest frames, GPU completion or instructions.";
@@ -385,7 +390,7 @@ struct Bridge::Impl {
                 const bool running=method=="resume";
                 if(!hooks.set_running(running)||hooks.running()!=running)
                     throw std::runtime_error("native execution state change failed");
-                Finish(job,Success(id,{{"state",running?"running":"paused"},{"paused",!running}}));
+                Finish(job,Success(id,{{"state",running?"running":"paused"},{"paused",!running},{"frozen",false}}));
             }
             else if(method=="screenshot") {
                 std::unique_lock lock(capture->mutex);

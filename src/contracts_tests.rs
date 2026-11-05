@@ -57,6 +57,48 @@ fn ryujinx_persistent_touch_contract_is_strictly_scoped() {
 }
 
 #[test]
+fn ryujinx_pause_contract_is_strictly_scoped() {
+    let id = "ryujinx.execution-pause.scheduler-state";
+    let exception = registry()
+        .exceptions
+        .iter()
+        .find(|item| item.id == id)
+        .unwrap();
+    assert_eq!(exception.kind, "variation_binding");
+    assert_eq!(
+        exception.targets,
+        ["EXEC.PAUSE.HALT.1", "EXEC.PAUSE.PERSIST.1"]
+    );
+    let ad = advertisement_from_hello(&json!({"contracts":advertisement_value(&[id])}));
+    let methods = vec!["status".into(), "pause".into(), "resume".into()];
+    let status =
+        validate_advertisement(&ad, Some("ryujinx-family-native"), Some("switch"), &methods);
+    assert_eq!(status.state, "validated", "{:?}", status.errors);
+    assert_eq!(status.constraints["execution.pause.frozen"], json!(false));
+    assert_eq!(
+        status.constraints["execution.pause.free_progress_excluded"],
+        json!(false)
+    );
+    assert_eq!(
+        status.constraints["execution.pause.completion_boundary"],
+        json!("native_scheduler_state_acknowledged")
+    );
+    assert_eq!(
+        status.constraints["execution.pause.terminal_state"],
+        json!("paused")
+    );
+    for (adapter, system) in [
+        ("eden-family-native", "switch"),
+        ("ryujinx-family-native", "switch2"),
+    ] {
+        assert_ne!(
+            validate_advertisement(&ad, Some(adapter), Some(system), &methods).state,
+            "validated"
+        );
+    }
+}
+
+#[test]
 fn running_progress_wait_has_observation_not_exact_step_contract() {
     let feature = catalog()
         .features
