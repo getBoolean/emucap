@@ -4,6 +4,66 @@
   "contract_version": 3,
   "exceptions": [
     {
+      "id": "ryujinx.execution-pause.scheduler-state",
+      "feature": "execution.pause",
+      "kind": "variation_binding",
+      "targets": ["EXEC.PAUSE.HALT.1", "EXEC.PAUSE.PERSIST.1"],
+      "scope": {"adapter": "ryujinx-family-native", "systems": ["switch"]},
+      "activation": {"method": "pause"},
+      "constraints": {
+        "execution.pause.completion_boundary": "native_scheduler_state_acknowledged",
+        "execution.pause.terminal_state": "paused",
+        "execution.pause.frozen": false,
+        "execution.pause.free_progress_excluded": false,
+        "execution.pause.persistence": "until_resume_or_session_end"
+      },
+      "verification": ["contract-test:ryujinx-pause-contract-is-strictly-scoped", "native-abi:ryujinx-pause-status"]
+    },
+    {
+      "id": "libretro.input-touch.persistent-only",
+      "feature": "input.touch-wire",
+      "kind": "capability_absent",
+      "targets": ["INPUT.TOUCH.PULSE.1"],
+      "scope": {"adapter": "software-libretro", "systems": ["nds"]},
+      "activation": {"touch_capability": "persistent_single_contact"},
+      "constraints": {"input.touch.modes": ["hold", "release"], "input.ports.allowed": [0]},
+      "public_behavior": {"invalid": "unsupported"},
+      "verification": ["contract-test:software-libretro-persistent-touch"]
+    },
+    {
+      "id": "ryujinx.input-touch.persistent-only",
+      "feature": "input.touch-wire",
+      "kind": "capability_absent",
+      "targets": ["INPUT.TOUCH.PULSE.1"],
+      "scope": {"adapter": "ryujinx-family-native", "systems": ["switch"]},
+      "activation": {"touch_capability": "persistent_single_contact"},
+      "constraints": {"input.touch.modes": ["hold", "release"], "input.ports.allowed": [0]},
+      "public_behavior": {"invalid": "unsupported"},
+      "verification": ["contract-test:ryujinx-persistent-touch-contract-is-strictly-scoped"]
+    },
+    {
+      "id": "azahar.input-touch.persistent-only",
+      "feature": "input.touch-wire",
+      "kind": "capability_absent",
+      "targets": ["INPUT.TOUCH.PULSE.1"],
+      "scope": {"adapter": "azahar-libretro", "systems": ["3ds"]},
+      "activation": {"touch_capability": "persistent_single_contact"},
+      "constraints": {"input.touch.modes": ["hold", "release"], "input.ports.allowed": [0]},
+      "public_behavior": {"invalid": "unsupported"},
+      "verification": ["contract-test:persistent-touch-hides-pulse"]
+    },
+    {
+      "id": "eden.input-touch.persistent-only",
+      "feature": "input.touch-wire",
+      "kind": "capability_absent",
+      "targets": ["INPUT.TOUCH.PULSE.1"],
+      "scope": {"adapter": "eden-family-native", "systems": ["switch", "switch2"]},
+      "activation": {"touch_capability": "persistent_single_contact"},
+      "constraints": {"input.touch.modes": ["hold", "release"], "input.ports.allowed": [0]},
+      "public_behavior": {"invalid": "unsupported"},
+      "verification": ["contract-test:persistent-touch-hides-pulse"]
+    },
+    {
       "id": "mesen.execution.instruction-step-absent",
       "feature": "execution.step",
       "kind": "capability_absent",

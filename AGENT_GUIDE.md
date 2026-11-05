@@ -11,6 +11,23 @@ upstream instructions and points emucap at it, and `status` reports which tools
 are actually available on the host. On Windows, prefer the Rust `launch` tool and
 documented env overrides over the Unix shell launchers.
 
+For experimental Nintendo 3DS, Switch and Switch 2 profiles, first read the
+[qualification record](docs/emulator-family-qualification.md) and the
+[Azahar](adapters/azahar/README.md), [Eden-family](adapters/eden-family/README.md), or
+[Ryubing](adapters/ryujinx-family/README.md)
+build guide. Select `system` explicitly for Switch media. Pass the same `emulator`
+selection to `launch_plan` and `launch`; it accepts `fork`, `binary`, `core`,
+`python`, `profile`, `config`, and `renderer` where applicable. A patched binary
+and matching compiled profile are required. Inspect full `status` after launch
+and use only its advertised operations. In particular, a native progress wait
+does not permit `tap` or exact stepping. Persistent button/axis and touch holds
+require explicit release.
+
+Ryubing is a separate Ryujinx-family Switch 1 build, selected with
+`emulator: {"fork":"ryubing", "binary":"/path/to/Ryujinx"}`. It requires its
+complete patched output folder and .NET 10 runtime. Its current source recipe
+supports Windows/Linux x86_64; Switch 2 and exact stepping are unavailable.
+
 ## Let the agent do the install
 
 This repository is built so that **an agent (Claude Code, Codex, …) performs the

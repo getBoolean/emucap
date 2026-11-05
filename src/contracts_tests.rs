@@ -10,6 +10,120 @@ fn embedded_contract_sources_validate() {
 }
 
 #[test]
+fn software_libretro_persistent_touch_is_ds_only() {
+    let ad = advertisement_from_hello(&json!({"contracts":advertisement_value(&[
+        "libretro.input-touch.persistent-only"
+    ])}));
+    let methods = vec!["status".into(), "touch".into()];
+    assert_eq!(
+        validate_advertisement(&ad, Some("software-libretro"), Some("nds"), &methods).state,
+        "validated"
+    );
+    for (adapter, system) in [("software-libretro", "gba"), ("azahar-libretro", "nds")] {
+        assert_ne!(
+            validate_advertisement(&ad, Some(adapter), Some(system), &methods).state,
+            "validated"
+        );
+    }
+}
+
+#[test]
+fn ryujinx_persistent_touch_contract_is_strictly_scoped() {
+    let ad = advertisement_from_hello(&json!({"contracts":advertisement_value(&[
+        "ryujinx.input-touch.persistent-only"
+    ])}));
+    let methods = vec!["status".into(), "touch".into()];
+    let status =
+        validate_advertisement(&ad, Some("ryujinx-family-native"), Some("switch"), &methods);
+    assert_eq!(status.state, "validated", "{:?}", status.errors);
+    assert_eq!(
+        status.constraints["input.touch.modes"],
+        json!(["hold", "release"])
+    );
+    assert_ne!(
+        validate_advertisement(&ad, Some("eden-family-native"), Some("switch"), &methods).state,
+        "validated"
+    );
+    assert_ne!(
+        validate_advertisement(
+            &ad,
+            Some("ryujinx-family-native"),
+            Some("switch2"),
+            &methods
+        )
+        .state,
+        "validated"
+    );
+}
+
+#[test]
+fn ryujinx_pause_contract_is_strictly_scoped() {
+    let id = "ryujinx.execution-pause.scheduler-state";
+    let exception = registry()
+        .exceptions
+        .iter()
+        .find(|item| item.id == id)
+        .unwrap();
+    assert_eq!(exception.kind, "variation_binding");
+    assert_eq!(
+        exception.targets,
+        ["EXEC.PAUSE.HALT.1", "EXEC.PAUSE.PERSIST.1"]
+    );
+    let ad = advertisement_from_hello(&json!({"contracts":advertisement_value(&[id])}));
+    let methods = vec!["status".into(), "pause".into(), "resume".into()];
+    let status =
+        validate_advertisement(&ad, Some("ryujinx-family-native"), Some("switch"), &methods);
+    assert_eq!(status.state, "validated", "{:?}", status.errors);
+    assert_eq!(status.constraints["execution.pause.frozen"], json!(false));
+    assert_eq!(
+        status.constraints["execution.pause.free_progress_excluded"],
+        json!(false)
+    );
+    assert_eq!(
+        status.constraints["execution.pause.completion_boundary"],
+        json!("native_scheduler_state_acknowledged")
+    );
+    assert_eq!(
+        status.constraints["execution.pause.terminal_state"],
+        json!("paused")
+    );
+    for (adapter, system) in [
+        ("eden-family-native", "switch"),
+        ("ryujinx-family-native", "switch2"),
+    ] {
+        assert_ne!(
+            validate_advertisement(&ad, Some(adapter), Some(system), &methods).state,
+            "validated"
+        );
+    }
+}
+
+#[test]
+fn running_progress_wait_has_observation_not_exact_step_contract() {
+    let feature = catalog()
+        .features
+        .iter()
+        .find(|feature| feature.id == "execution.wait-running")
+        .expect("running progress waits need their own feature contract");
+    assert_eq!(feature.route.as_deref(), Some("debug"));
+    assert_eq!(feature.methods, ["wait_for_running_frames"]);
+    assert!(feature
+        .expectations
+        .iter()
+        .any(|value| value == "EXEC.WAIT.RUNNING.1"));
+    assert!(!feature
+        .expectations
+        .iter()
+        .any(|value| value == "TIME.EXACT.1" || value == "TIME.STOP.1"));
+    let methods = vec!["wait_for_running_frames".into()];
+    let ad = advertisement_from_hello(&serde_json::json!({"contracts":advertisement_value(&[])}));
+    assert_eq!(
+        validate_advertisement(&ad, Some("eden-family-native"), Some("switch2"), &methods).state,
+        "validated"
+    );
+}
+
+#[test]
 fn multi_operation_public_feature_can_expose_each_method_directly() {
     let mut catalog = catalog().clone();
     let feature = catalog

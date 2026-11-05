@@ -1,0 +1,9 @@
+{
+  "fork": "melonds",
+  "repository": "https://github.com/JesseTG/melonds-ds.git",
+  "reference": "v1.4.0",
+  "revision": "f394adbacb5722ee97c1b37c8064da9a25818310",
+  "systems": ["nds"],
+  "renderers": ["software"],
+  "target": "melondsds_libretro"
+}

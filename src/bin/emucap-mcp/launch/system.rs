@@ -40,6 +40,9 @@ pub(super) fn normalize_system(system: &str) -> Option<&'static str> {
         "gamecube" | "game-cube" | "gc" | "ngc" | "dolphin-gc" => Some("gamecube"),
         "wii" | "nintendo-wii" | "dolphin-wii" => Some("wii"),
         "xbox" | "original-xbox" | "ogxbox" => Some("xbox"),
+        "3ds" | "ctr" | "n3ds" | "new3ds" | "azahar" => Some("3ds"),
+        "switch" | "nx" | "nintendo-switch" => Some("switch"),
+        "switch2" | "switch-2" | "nx2" | "nintendo-switch-2" => Some("switch2"),
         _ => None,
     }
 }
@@ -64,6 +67,8 @@ pub(super) fn adapter_for_system(system: &str) -> (&'static str, Option<&'static
         "ps2" => ("pcsx2", None),
         "gamecube" | "wii" => ("dolphin", None),
         "xbox" => ("xemu", None),
+        "3ds" => ("azahar", None),
+        "switch" | "switch2" => ("eden_family", None),
         _ => ("", None),
     }
 }
@@ -84,4 +89,44 @@ pub(super) fn adapter_supports_sound(adapter: &str) -> bool {
         adapter,
         "mednafen" | "mame_pc98" | "xemu" | "mesen" | "flycast" | "openmsx" | "dolphin"
     )
+}
+
+/// DS/GBA alternative cores are opt-in; the existing default routes stay stable.
+pub(super) fn adapter_with_emulator_selection(
+    system: &str,
+    backend: Option<crate::args::Pc98BackendArgs>,
+    emulator: bool,
+) -> (&'static str, Option<&'static str>) {
+    if emulator && matches!(system, "nds" | "gba") {
+        ("software_libretro", None)
+    } else {
+        adapter_for_system_and_pc98_backend(system, backend)
+    }
+}
+
+#[cfg(test)]
+mod alternative_core_tests {
+    use super::*;
+
+    #[test]
+    fn ds_gba_software_cores_require_explicit_selection() {
+        assert_eq!(
+            adapter_with_emulator_selection("nds", None, false).0,
+            "desmume_nds"
+        );
+        assert_eq!(
+            adapter_with_emulator_selection("gba", None, false).0,
+            "mesen2"
+        );
+        for system in ["nds", "gba"] {
+            assert_eq!(
+                adapter_with_emulator_selection(system, None, true).0,
+                "software_libretro"
+            );
+        }
+        assert_eq!(
+            adapter_with_emulator_selection("switch", None, true).0,
+            "eden_family"
+        );
+    }
 }

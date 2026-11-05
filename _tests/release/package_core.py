@@ -8,6 +8,7 @@ from pathlib import Path
 import queue
 import shutil
 import subprocess
+import sys
 import tarfile
 import tempfile
 import threading
@@ -15,6 +16,42 @@ import tomllib
 import zipfile
 
 CORE = ("emucap", "emucap-mcp", "emucap-track-mcp", "emucap-broker")
+AZAHAR_RESOURCES = ("adapters/azahar/bridge.py",)
+
+
+def azahar_payload(root, suffix):
+    required = ("target/release/emucap-azahar" + suffix, *AZAHAR_RESOURCES)
+    for relative in required:
+        if not (root / relative).is_file():
+            raise RuntimeError(f"Missing Azahar package resource: {relative}")
+    return {
+        "resources": {path: hashlib.sha256((root / path).read_bytes()).hexdigest()
+                      for path in AZAHAR_RESOURCES},
+        "python": {"minimum_version": "3.12", "bundled": False},
+        "core": {"bundled": False, "build_profile_required": True},
+    }
+
+
+def smoke_azahar_worker(root, scratch):
+    if sys.version_info < (3, 12):
+        raise RuntimeError("Azahar package validation requires a real Python 3.12+ executable")
+    worker = root / "adapters/azahar/bridge.py"
+    command = [sys.executable, "-I", "-u", str(worker)]
+    result = subprocess.run([*command, "--help"], capture_output=True, text=True, timeout=15)
+    if result.returncode or "--core" not in result.stdout:
+        raise RuntimeError(f"Extracted Azahar worker help failed: {result.stderr}")
+    scratch.mkdir(parents=True, exist_ok=True)
+    content = scratch / "synthetic-preflight.3dsx"
+    content.write_bytes(b"package dependency preflight; not executable homebrew")
+    missing_core = scratch / "missing-azahar-libretro"
+    result = subprocess.run([*command, "--core", str(missing_core), "--rom", str(content),
+                             "--directory", str(scratch / "azahar-user")],
+                            capture_output=True, text=True, timeout=15)
+    if not result.returncode or missing_core.name not in result.stderr:
+        raise RuntimeError(f"Missing Azahar native core was not rejected: {result.stderr}")
+    return {"worker_help": "passed", "missing_core": "rejected",
+            "python_version": sys.version.split()[0],
+            "proof_level": "extracted-worker-preflight"}
 
 
 def run(*args, **kwargs):
@@ -39,6 +76,13 @@ def smoke(root, version, revision, scratch):
         assert (bindir / (name + suffix)).samefile(actual), output
     assert "Usage:" in run(str(bindir / ("emucap" + suffix)), "--help", env=env)
     evidence = {"emucap": {"help": "passed"}}
+    azahar_payload(root, suffix)
+    azahar = subprocess.run([str(bindir / ("emucap-azahar" + suffix))],
+                            capture_output=True, text=True, env=env, timeout=15)
+    if not azahar.returncode or "usage: emucap-azahar" not in azahar.stderr:
+        raise RuntimeError(f"Extracted Azahar host usage failed: {azahar.stderr}")
+    evidence["emucap-azahar"] = {"host_usage": "passed",
+                                  **smoke_azahar_worker(root, scratch / "azahar-preflight")}
     for name in CORE[1:3]:
         with tempfile.TemporaryFile(mode="w+", encoding="utf-8") as errors:
             process = subprocess.Popen([str(bindir / (name + suffix))], cwd=scratch,
@@ -106,7 +150,7 @@ def main():
     source, output = Path(args.source).resolve(), Path(args.output).resolve()
     assert run("git", "-C", str(source), "rev-parse", "HEAD") == args.revision
     assert not run("git", "-C", str(source), "status", "--porcelain")
-    assert tomllib.loads((source / "Cargo.toml").read_text())["package"]["version"] == args.version
+    assert tomllib.loads((source / "Cargo.toml").read_text(encoding="utf-8"))["package"]["version"] == args.version
     short = run("git", "-C", str(source), "rev-parse", "--short", "HEAD")
     suffix = ".exe" if args.target.endswith("windows-msvc") else ""
     name = f"emucap-{args.version}-{args.target}"
@@ -127,12 +171,14 @@ def main():
         package_metadata = next(p for p in metadata["packages"] if p["name"] == "emucap")
         binaries = sorted(t["name"] for t in package_metadata["targets"] if "bin" in t["kind"])
         assert set(CORE).issubset(binaries)
+        assert "emucap-azahar" in binaries, "Azahar Rust host must be included in core packages"
         for binary in binaries:
             path = bindir / (binary + suffix)
             shutil.copy2(source / "target" / args.target / "release" / path.name, path)
             digests[path.name] = hashlib.sha256(path.read_bytes()).hexdigest()
         manifest = dict(version=args.version, source_revision=args.revision,
                         target=args.target, binaries=digests,
+                        azahar=azahar_payload(stage, suffix),
                         rustc=compiler)
         (stage / "CORE-BUILD.json").write_text(json.dumps(manifest, indent=2) + "\n")
         (stage / "PREBUILT-CORE.md").write_text(
@@ -141,7 +187,17 @@ def main():
             "Run `sh tools/register-codex-mcp.sh` (macOS/Linux) or "
             "`pwsh -File tools/register-codex-mcp.ps1` (Windows), then reconnect both MCP servers.\n"
             "The Rust build step in AGENT_GUIDE.md can be skipped. Install the matching native "
-            "emulator package separately. Firmware and games are supplied by the user.\n")
+            "emulator package separately. Firmware and games are supplied by the user.\n\n"
+            "Azahar also requires a real Python 3.12+ executable matching the native core architecture "
+            "and a separately built patched libretro core with its matching build profile. "
+            "The stdlib-only private worker is `adapters/azahar/bridge.py`; Python and the native "
+            "core are not bundled. Set explicit Python/core paths in the managed launch options. "
+            "Package validation checks host/worker startup and missing-core rejection; it does not "
+            "qualify live emulator or guest behavior.\n\n"
+            "Ryubing is selected with emulator.fork=ryubing and an explicit patched binary. "
+            "Build adapters/ryujinx-family separately and retain its complete output folder, "
+            "including the hash-bound native bridge and managed dependencies. Install .NET 10 "
+            "runtime separately. Ryubing is Switch 1 only; its emulator/runtime are not bundled.\n")
         if suffix:
             package = Path(shutil.make_archive(str(output / name), "zip", temporary, name))
         else:

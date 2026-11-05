@@ -90,7 +90,7 @@ impl CancellationCapability {
         for method in &capability.methods {
             if !matches!(
                 method.as_str(),
-                "step" | "step_instructions" | "step_input_polls"
+                "step" | "step_instructions" | "step_input_polls" | "wait_for_running_frames"
             ) || !methods.contains(method)
                 || !unique.insert(method)
             {

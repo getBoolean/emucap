@@ -9,6 +9,52 @@ pub(super) fn enrich_feature_capabilities(
     };
     object.remove("memory_batch_capability");
     object.remove("execution_speed_capability");
+    object.remove("progress_capability");
+    object.remove("touch_capability");
+    object.remove("temporal_cancellation_capability");
+    if let Some(touch) = &features.touch {
+        object.insert("touch_capability".into(), serde_json::json!(touch));
+        if let Some(methods) = object
+            .get_mut("methods")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            methods.retain(|method| method != "pulse_touch_while_running");
+        }
+    }
+    if let Some(cancel) = &features.temporal_cancellation {
+        object.insert(
+            "temporal_cancellation_capability".into(),
+            serde_json::json!(cancel),
+        );
+    }
+    let progress_ready = features
+        .temporal_cancellation
+        .as_ref()
+        .is_some_and(|cancel| {
+            cancel
+                .methods
+                .iter()
+                .any(|method| method == emucap::live::progress::METHOD)
+        });
+    if let Some(progress) = features.progress.as_ref().filter(|_| progress_ready) {
+        object.insert("progress_capability".into(), serde_json::json!(progress));
+        if let Some(methods) = object
+            .get_mut("methods")
+            .and_then(serde_json::Value::as_array_mut)
+        {
+            if !methods
+                .iter()
+                .any(|method| method == emucap::live::progress::METHOD)
+            {
+                methods.push(serde_json::json!(emucap::live::progress::METHOD));
+            }
+        }
+    } else if let Some(methods) = object
+        .get_mut("methods")
+        .and_then(serde_json::Value::as_array_mut)
+    {
+        methods.retain(|method| method != emucap::live::progress::METHOD);
+    }
     if let Some(batch) = &features.memory_batch {
         object.insert("memory_batch_capability".into(), serde_json::json!(batch));
     }

@@ -119,3 +119,59 @@ openMSX
 
 Upstream license determinations were made from each project's source-file SPDX
 headers and README, not from the bare COPYING boilerplate.
+
+Azahar
+  Upstream: https://github.com/azahar-emu/azahar
+  Pinned source: 9c38437daad90a2f05f55a047d04d4073a476456
+  License: GPL-2.0-or-later; bundled dependencies retain upstream notices.
+  Used by: adapters/azahar (libretro source patches and build recipe).
+  Distribution: source patches, private Python worker and Rust supervisor;
+                no emulator library, firmware, keys, or game media.
+
+Eden family
+  Sources: https://git.eden-emu.dev/eden-emu/eden
+           https://git.eden-emu.dev/Takoroka/eden-nx2
+           https://github.com/Djihads80/Eglantine
+  Exact revisions: adapters/eden-family/profiles/*.json
+  License: GPL-3.0-or-later for native producer/integration and upstream
+           combined builds; bundled dependencies retain their own notices.
+  Used by: adapters/eden-family (shared SDL producer, per-pin integration
+           patches, compiled build identity and build recipes).
+  Distribution: source and build recipes, no emulator binaries, proprietary
+                firmware, keys, or game media. Redistributors of built emulators
+                must retain corresponding source and dependency notices.
+
+Emulator witness fixtures
+  Original sources: _tests/live/emulator-family/{ctr.c,switch.c}
+  License: CC0-1.0 (per source SPDX headers). No Nintendo SDK code or assets.
+
+Ryubing / Ryujinx family
+  Upstream: https://git.ryujinx.app/projects/Ryubing.git
+  Pinned source: a61a42681119bf15fe8f3297677ae48bda83e70f
+  Upstream copyright: Ryujinx Team and Contributors (upstream LICENSE.txt).
+  Upstream license: MIT. Preserve the upstream and bundled dependency notices.
+  Used by: adapters/ryujinx-family (source patch, managed frontend glue,
+           source-build recipe and authenticated native C ABI).
+  emucap's shared native bridge and C ABI are GPL-3.0-or-later;
+  the managed glue has its own MIT SPDX notices. The upstream MIT license
+  does not replace the native bridge's license.
+  Distribution: source and build recipes; emulator binaries and .NET runtime
+                are not part of the core package. No firmware, keys or games.
+
+Research/tool and AI-use provenance: CREDITS.md.
+Input Lab design specimen and native raster UI: Pro Controller artwork from shmove/gamepadviewer-procon,
+based on Open Joystick Display Project and Anthony Mattera (KernelZechs).
+Copyright (c) 2019-2020 Open Joystick Display Project, Anthony Mattera (KernelZechs).
+The retained full terms and acknowledgment are in docs/design/assets/procon/COPYRIGHT.md.
+This product includes software developed by "Open Joystick Display Project and
+'Anthony Mattera' (http://www.ojdproject.com/)."
+
+Software libretro automation profiles:
+  melonDS DS v1.4.0, Jesse Talavera-Greenberg and contributors,
+  https://github.com/JesseTG/melonds-ds (GPL-3.0-or-later), including its
+  pinned melonDS core and separately licensed bundled dependencies.
+  mGBA 0.10.5, endrift and contributors,
+  https://github.com/mgba-emu/mgba (MPL-2.0); retain dependency notices.
+  Used by adapters/libretro for original homebrew input/capture qualification.
+  Build recipes and source-side identity glue are supplied; no emulator binaries,
+  commercial content, original BIOS, firmware or keys are included in core packages.

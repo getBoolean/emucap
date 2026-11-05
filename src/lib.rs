@@ -1,4 +1,5 @@
 pub mod analysis;
+pub mod azahar_host;
 pub mod build_identity;
 pub mod bundle;
 pub mod ccd;
@@ -6,6 +7,7 @@ pub mod content_identity;
 pub mod contracts;
 pub mod cue;
 pub mod debug_selection;
+pub mod emulator_profile;
 pub mod event_contracts;
 pub mod gdb_rsp;
 pub mod gdi;

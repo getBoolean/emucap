@@ -11,8 +11,9 @@ const AUTH_ROOT: &str = "reconnect-test-root";
 const AUTH_LAUNCH: &str = "launch-01arz3ndektsv4rrffq69g5fav";
 
 struct ReconnectAuthEnv {
-    _guard: std::sync::MutexGuard<'static, ()>,
+    // Fields drop in declaration order: restore the environment before unlocking it.
     _env: crate::test_env::EnvGuard,
+    _guard: std::sync::MutexGuard<'static, ()>,
 }
 
 impl ReconnectAuthEnv {

@@ -134,6 +134,7 @@ pub fn dolphin_spec(
             "--config=Dolphin.Interface.UsePanicHandlers=False".to_string(),
             "--config=Dolphin.Analytics.Enabled=False".to_string(),
             "--config=Dolphin.Analytics.PermissionAsked=True".to_string(),
+            "--config=Graphics.Settings.FrameDumpsResolutionType=2".to_string(),
         ])
         .env("EMUCAP_PORT", opts.port.to_string())
         .env("EMUCAP_CONTENT", opts.content)

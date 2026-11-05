@@ -162,7 +162,37 @@ pub(crate) fn make_launch(
             "system": system,
         });
     }
-    let (adapter, module) = adapter_for_system_and_pc98_backend(system, a.pc98_backend);
+    let (adapter, module) = super::system::adapter_with_emulator_selection(
+        system,
+        a.pc98_backend,
+        a.emulator.is_some(),
+    );
+    if adapter == "software_libretro"
+        && (a.nds_storage_image.is_some() || a.content_path2.is_some() || a.display == Some(true))
+    {
+        return serde_json::json!({"launched":false,
+            "reason":"software libretro supports headless single-content launch without an external storage image"});
+    }
+    let selected_emulator = if super::emulator_family::is_family(adapter) {
+        let Some(root) = find_repo_root() else {
+            return serde_json::json!({"launched":false,"error":"emucap repository root unavailable"});
+        };
+        match emucap::launch::emulator_family::resolve_verified(
+            &root,
+            system,
+            a.emulator.as_ref().unwrap_or(&Default::default()),
+        ) {
+            Ok(selected) => Some(selected),
+            Err(error) => {
+                return serde_json::json!({"launched":false,"reason":"compatible emulator build unavailable","error":error.to_string()})
+            }
+        }
+    } else {
+        if a.emulator.is_some() {
+            return serde_json::json!({"launched":false,"error":"emulator selection supports 3ds, nds, gba, switch and switch2"});
+        }
+        None
+    };
     if adapter == "np2kai" && (a.display == Some(true) || a.content_path2.is_some()) {
         return serde_json::json!({
             "launched": false,
@@ -210,8 +240,11 @@ pub(crate) fn make_launch(
         });
     }
     if let Some(root) = find_repo_root() {
-        let adapter_binary =
-            adapter_binary_precondition_for(adapter, &root, a.display.unwrap_or(false));
+        let adapter_binary = if let Some(selected) = &selected_emulator {
+            serde_json::json!({"available":true,"path":selected.binary.display().to_string(),"profile":selected.profile})
+        } else {
+            adapter_binary_precondition_for(adapter, &root, a.display.unwrap_or(false))
+        };
         if !adapter_binary["available"].as_bool().unwrap_or(false) {
             return missing_adapter_binary_response(adapter, system, port, &root, adapter_binary);
         }
@@ -479,6 +512,15 @@ pub(crate) fn make_launch(
         "pcsx2" => launch_pcsx2(port, producer_key, runtime, effective_args),
         "dolphin" => launch_dolphin(port, producer_key, runtime, system, effective_args),
         "xemu" => super::xemu::launch_xemu(port, producer_key, runtime, effective_args),
+        "azahar" | "eden_family" | "software_libretro" => super::emulator_family::start(
+            selected_emulator
+                .as_ref()
+                .expect("family selection admitted"),
+            port,
+            producer_key,
+            runtime,
+            effective_args,
+        ),
         _ => serde_json::json!({
             "launched": false,
             "reason": format!("system {system} is not supported by the Rust launcher"),
@@ -599,6 +641,20 @@ pub(crate) fn make_launch(
             return failure;
         }
     };
+    if let Some(selected) = &selected_emulator {
+        let expected_root = outcome["managed_user_root"].as_str().unwrap_or("");
+        if let Err(error) = super::emulator_family::runtime_identity_error(
+            selected,
+            &ready_status,
+            link.capabilities(),
+            expected_root,
+        ) {
+            let _ = manifest.terminate_owned_processes();
+            let _ = abort_staged_reclaim(link, direct_reclaim);
+            let _ = prepared.abort();
+            return serde_json::json!({"launched":false,"reason":"native emulator build/root readback did not match admission","error":error});
+        }
+    }
     if let Some(reason) = controlled_launch_contract_error(
         a.start_frozen || repeatable,
         repeatable,
@@ -710,6 +766,9 @@ fn record_token_cleanup_error(outcome: &mut serde_json::Value, error: Option<Str
 }
 
 pub(super) fn adapter_ready_timeout(adapter: &str) -> std::time::Duration {
+    if super::emulator_family::is_family(adapter) {
+        return std::time::Duration::from_secs(45);
+    }
     // Mesen starts an Avalonia window and then loads the command-line Lua script. On macOS a cold
     // display wake can make that path exceed the generic bridge budget even though the process is
     // healthy. Both built-in and fallback paths use the same bounded 30-second budget; the

@@ -1,0 +1,57 @@
+{
+  "repository": "https://github.com/shmove/gamepadviewer-procon",
+  "revision": "4310b6795f1a57053f955d74f54f042aaa98c535",
+  "modifications": "Asset bytes unchanged; composition and input-state styling adapted in preview HTML.",
+  "files": [
+    {
+      "upstream_path": "COPYRIGHT.md",
+      "local_path": "COPYRIGHT.md",
+      "sha256": "963fc0552becda59b654fc7f326ff4a06a7956798addc8c5856902a890a23f9c"
+    },
+    {
+      "upstream_path": "README.md",
+      "local_path": "README.md",
+      "sha256": "4842ae8132a8669a3f951d5b3e86b3ab009d794b35988dfc730db712edf7f9be"
+    },
+    {
+      "upstream_path": "procon.css",
+      "local_path": "procon.css",
+      "sha256": "01189629294ba0d106b1a95c748512757d8045508a49ee54ffdb831ed5bb1b88"
+    },
+    {
+      "upstream_path": "images/default/base.svg",
+      "local_path": "base.svg",
+      "sha256": "5d2e668dc4d78562482bb274d1c953e4fc79d689e1081231ca46174d11379b98"
+    },
+    {
+      "upstream_path": "images/default/abxy.svg",
+      "local_path": "abxy.svg",
+      "sha256": "78bfddd7c8db2b00926b303d5716946ec7fee8b31b8fa6c40e5cdc470e9aae01"
+    },
+    {
+      "upstream_path": "images/default/bumper.svg",
+      "local_path": "bumper.svg",
+      "sha256": "75a34c0f2c787ae1232667f31460fe19f8e371000d91019843befeccd4eddc79"
+    },
+    {
+      "upstream_path": "images/default/dpad.svg",
+      "local_path": "dpad.svg",
+      "sha256": "1d4219dd9a2a87b7ef85406bc5188b305ddbf16f88f196d8c33ab3b95a837b97"
+    },
+    {
+      "upstream_path": "images/default/plusminus.svg",
+      "local_path": "plusminus.svg",
+      "sha256": "dc41386be998bcae7e64b623f8c2aed7f2efc7f4a46e2da4fde713994832da3b"
+    },
+    {
+      "upstream_path": "images/default/stick.svg",
+      "local_path": "stick.svg",
+      "sha256": "964041f2fe8dc7541631fe34bb8bec4021f4a31a5b3f9ac997fa41e7f95e3b48"
+    },
+    {
+      "upstream_path": "images/default/trigger-button.svg",
+      "local_path": "trigger-button.svg",
+      "sha256": "eab96a3db00231709f8b5f528a184b2d6e7afa56e787901bbb2151e73261929b"
+    }
+  ]
+}

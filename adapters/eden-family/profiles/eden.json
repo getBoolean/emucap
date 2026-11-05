@@ -1,0 +1,8 @@
+{
+  "fork": "eden",
+  "repository": "https://git.eden-emu.dev/eden-emu/eden.git",
+  "reference": "master",
+  "revision": "5df599128d6828fa0e42968909da848c255d22b1",
+  "systems": ["switch"],
+  "renderers": ["vulkan", "opengl"]
+}

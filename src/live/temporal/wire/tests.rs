@@ -90,6 +90,9 @@ fn pair() -> (BufReader<TcpStream>, TcpStream, TcpStream) {
     let listener = TcpListener::bind("127.0.0.1:0").unwrap();
     let client = TcpStream::connect(listener.local_addr().unwrap()).unwrap();
     let (server, _) = listener.accept().unwrap();
+    // Match authenticated production sockets; split replies exercise framing, not Nagle delays.
+    client.set_nodelay(true).unwrap();
+    server.set_nodelay(true).unwrap();
     server
         .set_read_timeout(Some(Duration::from_secs(2)))
         .unwrap();

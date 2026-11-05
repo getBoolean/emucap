@@ -170,6 +170,8 @@ pub struct Capabilities {
 
 #[derive(Debug, Clone, Default, PartialEq)]
 pub struct FeatureCapabilities {
+    pub touch: Option<TouchCapability>,
+    pub progress: Option<super::progress::ProgressCapability>,
     pub temporal_cancellation: Option<super::temporal::CancellationCapability>,
     pub memory_batch: Option<super::memory_batch::MemoryBatchCapability>,
     pub execution_speed: Option<super::pacing::ExecutionSpeedCapability>,
@@ -218,6 +220,17 @@ impl FeatureCapabilities {
             ));
         }
         let advertised = |method: &str| methods.iter().any(|name| name == method);
+        let touch = hello
+            .get("touch_capability")
+            .map(|value| {
+                if !advertised("touch") {
+                    return Err(LinkError::Protocol(
+                        "touch_capability requires touch".into(),
+                    ));
+                }
+                TouchCapability::from_hello(value).map_err(LinkError::Protocol)
+            })
+            .transpose()?;
         let paired = |method: &str, field: &str| match (advertised(method), hello.get(field)) {
             (true, Some(value)) => Ok(Some(value)),
             (false, None) => Ok(None),
@@ -225,6 +238,11 @@ impl FeatureCapabilities {
                 "{method} and {field} must be advertised together"
             ))),
         };
+        let progress = paired(super::progress::METHOD, "progress_capability")?
+            .map(|value| {
+                super::progress::ProgressCapability::from_hello(value).map_err(LinkError::Protocol)
+            })
+            .transpose()?;
         let memory_batch = paired(super::memory_batch::METHOD, "memory_batch_capability")?
             .map(|value| {
                 super::memory_batch::MemoryBatchCapability::from_hello(value, memory_types)
@@ -244,10 +262,160 @@ impl FeatureCapabilities {
             })
             .transpose()?;
         Ok(Self {
+            touch,
+            progress,
             memory_batch,
             execution_speed,
             temporal_cancellation,
         })
+    }
+}
+
+/// Inclusive native coordinates within the logical touchscreen.
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct TouchBounds {
+    pub x_min: u64,
+    pub x_max: u64,
+    pub y_min: u64,
+    pub y_max: u64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(deny_unknown_fields)]
+/// Absolute single-contact input with persistent hold/release only.
+/// Legacy NDS timed input remains governed by its existing wire contract.
+pub struct TouchCapability {
+    pub ports: Vec<u64>,
+    pub width: u64,
+    pub height: u64,
+    pub coordinate_space: String,
+    pub contacts: u64,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub bounds: Option<TouchBounds>,
+}
+
+impl TouchCapability {
+    pub fn from_hello(value: &Value) -> Result<Self, String> {
+        let capability: Self =
+            serde_json::from_value(value.clone()).map_err(|error| error.to_string())?;
+        if capability.ports != [0]
+            || !(1..=8192).contains(&capability.width)
+            || !(1..=8192).contains(&capability.height)
+            || capability.contacts != 1
+            || capability.coordinate_space != "touchscreen"
+            || capability.bounds.as_ref().is_some_and(|bounds| {
+                bounds.x_min > bounds.x_max
+                    || bounds.y_min > bounds.y_max
+                    || bounds.x_max >= capability.width
+                    || bounds.y_max >= capability.height
+            })
+        {
+            return Err("invalid absolute touchscreen capability".into());
+        }
+        Ok(capability)
+    }
+
+    pub fn validate_input(
+        &self,
+        port: u64,
+        x: Option<u64>,
+        y: Option<u64>,
+        frames: Option<u64>,
+        release: bool,
+    ) -> Result<(), String> {
+        if !self.ports.contains(&port) {
+            return Err("touch port is not advertised".into());
+        }
+        if release {
+            return Ok(());
+        }
+        if frames.is_some() {
+            return Err("this touchscreen supports persistent hold/release only".into());
+        }
+        let bounds = self.effective_bounds();
+        if x.is_none_or(|x| !(bounds.x_min..=bounds.x_max).contains(&x))
+            || y.is_none_or(|y| !(bounds.y_min..=bounds.y_max).contains(&y))
+        {
+            return Err(format!(
+                "touch requires coordinates inside advertised bounds: x={}..={}, y={}..={}",
+                bounds.x_min, bounds.x_max, bounds.y_min, bounds.y_max
+            ));
+        }
+        Ok(())
+    }
+
+    fn effective_bounds(&self) -> TouchBounds {
+        self.bounds.clone().unwrap_or(TouchBounds {
+            x_min: 0,
+            x_max: self.width - 1,
+            y_min: 0,
+            y_max: self.height - 1,
+        })
+    }
+}
+
+#[cfg(test)]
+mod touch_capability_tests {
+    use super::*;
+    use serde_json::json;
+
+    #[test]
+    fn absolute_touch_requires_valid_geometry_and_wire_support() {
+        let value = json!({"ports":[0],"width":320,"height":240,"coordinate_space":"touchscreen","contacts":1});
+        let hello = json!({"touch_capability":value});
+        assert!(
+            FeatureCapabilities::from_hello(&hello, &["touch".into()], &[])
+                .unwrap()
+                .touch
+                .is_some()
+        );
+        assert!(FeatureCapabilities::from_hello(&hello, &[], &[]).is_err());
+        for (key, bad) in [
+            ("ports", json!([0, 0])),
+            ("width", json!(0)),
+            ("height", json!(8193)),
+            ("contacts", json!(2)),
+            ("coordinate_space", json!("mouse")),
+        ] {
+            let mut invalid = value.clone();
+            invalid[key] = bad;
+            assert!(TouchCapability::from_hello(&invalid).is_err());
+        }
+    }
+
+    #[test]
+    fn native_touch_rectangle_rejects_clamped_edges_and_invalid_bounds() {
+        let value = json!({"ports":[0],"width":1280,"height":720,"coordinate_space":"touchscreen",
+            "contacts":1,"bounds":{"x_min":15,"x_max":1264,"y_min":15,"y_max":704}});
+        let touch = TouchCapability::from_hello(&value).unwrap();
+        for (x, y) in [(15, 15), (640, 360), (1264, 704)] {
+            assert!(touch
+                .validate_input(0, Some(x), Some(y), None, false)
+                .is_ok());
+        }
+        for (x, y) in [
+            (0, 0),
+            (14, 15),
+            (1265, 15),
+            (15, 14),
+            (15, 705),
+            (1279, 719),
+        ] {
+            assert!(touch
+                .validate_input(0, Some(x), Some(y), None, false)
+                .is_err());
+        }
+        assert!(touch.validate_input(0, None, None, None, true).is_ok());
+        for bounds in [
+            json!({"x_min":16,"x_max":15,"y_min":15,"y_max":704}),
+            json!({"x_min":15,"x_max":1280,"y_min":15,"y_max":704}),
+            json!({"x_min":15,"x_max":1264,"y_min":15,"y_max":720}),
+        ] {
+            let mut bad = value.clone();
+            bad["bounds"] = bounds;
+            assert!(TouchCapability::from_hello(&bad).is_err());
+        }
     }
 }
 

@@ -27,6 +27,10 @@ pub use screenshot::screenshot;
 mod pointer;
 pub use pointer::{click_pointer, drag_pointer, move_pointer};
 
+#[cfg(test)]
+#[path = "tools/progress_wait_tests.rs"]
+mod progress_wait_tests;
+
 #[path = "tools/probe.rs"]
 mod probe_operation;
 pub use probe_operation::{probe, probe_available, probe_available_for_methods};
@@ -357,6 +361,16 @@ pub fn touch(
     release: bool,
 ) -> Result<ToolOutput, LinkError> {
     let mut params = json!({ "port": port });
+    if let Some(touch) = &link.capabilities().features.touch {
+        touch
+            .validate_input(port, x, y, frames, release)
+            .map_err(bad_params)?;
+    } else if port != 0 || (!release && (x.is_none_or(|x| x >= 256) || y.is_none_or(|y| y >= 192)))
+    {
+        return Err(bad_params(
+            "legacy touchscreen requires port zero and coordinates inside 256x192",
+        ));
+    }
     if release {
         params["release"] = json!(true);
     } else {
@@ -429,21 +443,21 @@ pub fn call_session_cleanup(
             return Err(LinkError::Emulator {
                 kind: "bad_state".into(),
                 message: "launch generation changed before session cleanup".into(),
-            })
+            });
         }
         Some(_) if reconnectable => true,
         Some(_) => {
             return Err(LinkError::Emulator {
                 kind: "bad_state".into(),
                 message: "launch generation is unavailable before session cleanup".into(),
-            })
+            });
         }
         None if reconnectable && !current_connection_known => {
             return Err(LinkError::Emulator {
                 kind: "bad_state".into(),
                 message: "launch generation is unavailable before reconnecting session cleanup"
                     .into(),
-            })
+            });
         }
         None => false,
     };
@@ -660,6 +674,94 @@ pub fn run_frames(link: &mut dyn EmulatorLink, n: u64) -> Result<ToolOutput, Lin
     Ok(ToolOutput::Json(
         link.call("run_frames", json!({ "n": n }))?,
     ))
+}
+
+/// Observe native progress without changing execution or persistent input state.
+pub fn wait_for_running_frames(
+    link: &mut dyn EmulatorLink,
+    frames: u64,
+    timeout_ms: u64,
+    cancellation: super::link::RequestCancellation,
+    owner: &str,
+) -> Result<ToolOutput, LinkError> {
+    use super::link::{AbortRequest, ProgressCallControl};
+    use super::reconnect::cancellation::OperationKey;
+    let method = super::progress::METHOD;
+    let capability = link
+        .capabilities()
+        .features
+        .progress
+        .clone()
+        .ok_or_else(|| bad_params("native progress observation is not advertised"))?;
+    capability
+        .validate_request(frames, timeout_ms)
+        .map_err(bad_params)?;
+    let stop = link
+        .capabilities()
+        .features
+        .temporal_cancellation
+        .as_ref()
+        .filter(|capability| capability.methods.iter().any(|name| name == method))
+        .map(|capability| capability.stop_host_ms)
+        .ok_or_else(|| LinkError::Emulator {
+            kind: "unsupported".into(),
+            message: "progress waits require keyed cancellation".into(),
+        })?;
+    let runtime = link
+        .capabilities()
+        .identity
+        .launch_id
+        .clone()
+        .filter(|value| !value.is_empty())
+        .ok_or_else(|| LinkError::Protocol("progress wait requires a launch identity".into()))?;
+    if cancellation.is_cancelled() {
+        return Err(LinkError::Cancelled);
+    }
+    let status = link.call("status", json!({}))?;
+    if status.get("state").and_then(Value::as_str) != Some("running") {
+        return Err(LinkError::Emulator {
+            kind: "bad_state".into(),
+            message: "progress wait requires an already-running guest".into(),
+        });
+    }
+    let key = OperationKey {
+        runtime: runtime.clone(),
+        owner_id: owner.into(),
+        operation_id: super::temporal::fresh_identity(),
+    };
+    key.validate()
+        .map_err(|error| LinkError::Protocol(error.to_string()))?;
+    let key = serde_json::to_value(key).map_err(|error| LinkError::Protocol(error.to_string()))?;
+    let budget = timeout_ms.saturating_add(stop);
+    let control = ProgressCallControl {
+        cancellation,
+        abort: Some(AbortRequest {
+            method: "cancel_operation".into(),
+            params: key.clone(),
+        }),
+        max_host_ms: Some(budget),
+        temporal_stop_ms: Some(stop),
+        temporal_deadline: Some(
+            std::time::Instant::now() + std::time::Duration::from_millis(budget),
+        ),
+    };
+    let result = link.call_with_progress(
+        method,
+        json!({"frames":frames,"timeout_ms":timeout_ms,"_control":key}),
+        &mut |_| Ok(()),
+        &control,
+    )?;
+    if link.capabilities().identity.launch_id.as_deref() != Some(&runtime)
+        || link.attachment_id() != Some(owner)
+    {
+        return Err(LinkError::Protocol(
+            "progress wait generation or attachment changed".into(),
+        ));
+    }
+    capability
+        .validate_terminal(&result, frames)
+        .map_err(LinkError::Protocol)?;
+    Ok(ToolOutput::Json(result))
 }
 
 pub fn pause(link: &mut dyn EmulatorLink, cpu: Option<&str>) -> Result<ToolOutput, LinkError> {

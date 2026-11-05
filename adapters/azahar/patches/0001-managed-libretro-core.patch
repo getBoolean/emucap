@@ -1,0 +1,244 @@
+diff --git a/src/citra_libretro/CMakeLists.txt b/src/citra_libretro/CMakeLists.txt
+index e28f9941b..6a6dc698f 100644
+--- a/src/citra_libretro/CMakeLists.txt
++++ b/src/citra_libretro/CMakeLists.txt
+@@ -31,6 +31,13 @@ add_library(citra_libretro SHARED
+ 
+ set_target_properties(citra_libretro PROPERTIES OUTPUT_NAME "azahar_libretro")
+ 
++if(NOT EMUCAP_PROFILE_HEADER OR NOT EXISTS "${EMUCAP_PROFILE_HEADER}")
++    message(FATAL_ERROR "EMUCAP_PROFILE_HEADER must identify the generated compiled build profile")
++endif()
++configure_file("${EMUCAP_PROFILE_HEADER}" "${CMAKE_CURRENT_BINARY_DIR}/emucap_profile.h" COPYONLY)
++target_include_directories(citra_libretro PRIVATE "${CMAKE_CURRENT_BINARY_DIR}")
++
++
+ create_target_directory_groups(citra_libretro)
+ 
+ if (BSD STREQUAL "NetBSD")
+@@ -82,6 +89,8 @@ endif()
+ 
+ if(MINGW)
+   target_link_libraries(citra_libretro PRIVATE crypt32)
++  # Ask the compiler driver to link the stack-protector runtime as well.
++  target_link_options(citra_libretro PRIVATE -fstack-protector-strong)
+ endif()
+ 
+ if(IOS)
+diff --git a/src/citra_libretro/citra_libretro.cpp b/src/citra_libretro/citra_libretro.cpp
+index 54df4dcdc..ddaea2a0a 100644
+--- a/src/citra_libretro/citra_libretro.cpp
++++ b/src/citra_libretro/citra_libretro.cpp
+@@ -15,6 +15,7 @@
+ #include "video_core/renderer_opengl/gl_vars.h"
+ #endif
+ #include "libretro.h"
++#include "emucap_profile.h"
+ 
+ #include "audio_core/libretro_input.h"
+ #include "audio_core/libretro_sink.h"
+@@ -67,9 +68,31 @@ public:
+ };
+ 
+ CitraLibRetro* emu_instance;
++static std::string emucap_last_error;
++#ifdef _WIN32
++#define EMUCAP_EXPORT extern "C" __declspec(dllexport)
++#else
++#define EMUCAP_EXPORT extern "C" __attribute__((visibility("default")))
++#endif
++EMUCAP_EXPORT const char* emucap_get_build_profile_json() {
++    return EMUCAP_BUILD_PROFILE_JSON;
++}
++EMUCAP_EXPORT const char* emucap_get_effective_user_root() {
++    if (!LibRetro::settings.managed_storage_ready)
++        return nullptr;
++    return FileUtil::GetUserPath(FileUtil::UserPath::UserDir).c_str();
++}
++EMUCAP_EXPORT const char* emucap_get_last_error() {
++    return emucap_last_error.c_str();
++}
+ 
+ void retro_init() {
+     emu_instance = new CitraLibRetro();
++    emucap_last_error.clear();
++    if (!LibRetro::ConfigureManagedStorage()) {
++        emucap_last_error = "Managed user directory could not be configured";
++        return;
++    }
+     Common::Log::LibRetroStart(LibRetro::GetLoggingBackend());
+     Common::Log::SetGlobalFilter(emu_instance->log_filter);
+ 
+@@ -312,6 +335,8 @@ void retro_run() {
+             }
+ 
+             LibRetro::DisplayMessage(msg.c_str());
++            emucap_last_error = msg;
++            return;
+         }
+     }
+ }
+@@ -511,6 +536,8 @@ void retro_reset() {
+  * libretro callback; Called when a game is to be loaded.
+  */
+ bool retro_load_game(const struct retro_game_info* info) {
++    if (!LibRetro::settings.managed_storage_ready || !emucap_last_error.empty())
++        return false;
+     LOG_INFO(Frontend, "Starting Azahar RetroArch game...");
+ 
+ #if CITRA_ARCH(x86_64) && CITRA_HAS_SSE42
+diff --git a/src/citra_libretro/core_settings.cpp b/src/citra_libretro/core_settings.cpp
+index 7b43e31c3..07c86f0f7 100644
+--- a/src/citra_libretro/core_settings.cpp
++++ b/src/citra_libretro/core_settings.cpp
+@@ -2,6 +2,7 @@
+ // Licensed under GPLv3 or any later version
+ // Refer to the LICENSE.txt file included.
+ 
++#include <filesystem>
+ #include <boost/hana/string.hpp>
+ 
+ #include "citra_libretro/core_settings.h"
+@@ -1075,38 +1076,36 @@ static void ParseLayoutOptions(void) {
+     Settings::values.large_screen_proportion = std::stof(large_screen_proportion);
+ }
+ 
++bool ConfigureManagedStorage() {
++    settings.managed_storage_ready = false;
++    auto target = LibRetro::GetSaveDir();
++    if (target.empty())
++        return false;
++    namespace fs = std::filesystem;
++    std::error_code error;
++    const auto base = fs::canonical(fs::u8path(target), error);
++    if (error)
++        return false;
++    const auto expected = base / "Azahar";
++    const auto resolved = fs::weakly_canonical(expected, error);
++    if (error || resolved != expected)
++        return false;
++    if (!target.ends_with("/"))
++        target += "/";
++    target += "Azahar/";
++    // Reject redirection before creation and before SetUserPath's fallback path.
++    if (!FileUtil::CreateFullPath(target) || !FileUtil::IsDirectory(target))
++        return false;
++    FileUtil::SetUserPath(target);
++    settings.managed_storage_ready =
++        FileUtil::GetUserPath(FileUtil::UserPath::UserDir) == target;
++    return settings.managed_storage_ready;
++}
++
+ static void ParseStorageOptions(void) {
+     Settings::values.use_virtual_sd = LibRetro::FetchVariable(config::storage::use_virtual_sd,
+                                                               config::enabled) == config::enabled;
+-
+-    // Configure the file storage location
+-    auto use_libretro_saves = LibRetro::FetchVariable(config::storage::use_libretro_save_path,
+-                                                      "LibRetro Default") == "LibRetro Default";
+-
+-    if (use_libretro_saves) {
+-        auto target_dir = LibRetro::GetSaveDir();
+-        if (target_dir.empty()) {
+-            LOG_INFO(Frontend, "No save dir provided; trying system dir...");
+-            target_dir = LibRetro::GetSystemDir();
+-        }
+-
+-        if (!target_dir.empty()) {
+-            if (!target_dir.ends_with("/"))
+-                target_dir += "/";
+-
+-            target_dir += "Azahar/";
+-
+-            // Ensure that this new dir exists
+-            if (!FileUtil::CreateDir(target_dir)) {
+-                LOG_ERROR(Frontend, "Failed to create \"{}\". Using Azahar's default paths.",
+-                          target_dir);
+-            } else {
+-                FileUtil::SetUserPath(target_dir);
+-                const auto& target_dir_result = FileUtil::GetUserPath(FileUtil::UserPath::UserDir);
+-                LOG_INFO(Frontend, "User dir set to \"{}\".", target_dir_result);
+-            }
+-        }
+-    }
++    ConfigureManagedStorage();
+ }
+ 
+ static LibRetro::CStickFunction GetAnalogFunction(const std::string& name) {
+diff --git a/src/citra_libretro/core_settings.h b/src/citra_libretro/core_settings.h
+index ecb695f75..c51fe166f 100644
+--- a/src/citra_libretro/core_settings.h
++++ b/src/citra_libretro/core_settings.h
+@@ -14,6 +14,7 @@ enum CStickFunction { Both, CStick, Touchscreen };
+ struct CoreSettings {
+ 
+     std::string file_path;
++    bool managed_storage_ready = false;
+ 
+     float analog_deadzone = 1.f;
+ 
+@@ -35,6 +36,7 @@ struct CoreSettings {
+ 
+ } extern settings;
+ 
++bool ConfigureManagedStorage();
+ void RegisterCoreOptions(void);
+ void ParseCoreOptions(void);
+ 
+diff --git a/src/citra_libretro/input/mouse_tracker.cpp b/src/citra_libretro/input/mouse_tracker.cpp
+index 7766b23e8..e27d2278f 100644
+--- a/src/citra_libretro/input/mouse_tracker.cpp
++++ b/src/citra_libretro/input/mouse_tracker.cpp
+@@ -82,7 +82,7 @@ MouseTracker::MouseTracker() {
+         break;
+     }
+ 
+-    last_moved = std::chrono::steady_clock::time_point::min();
++    last_moved = std::chrono::steady_clock::now();
+ }
+ 
+ MouseTracker::~MouseTracker() = default;
+diff --git a/src/citra_libretro/input/mouse_tracker.h b/src/citra_libretro/input/mouse_tracker.h
+index e838d0b7f..77975705c 100644
+--- a/src/citra_libretro/input/mouse_tracker.h
++++ b/src/citra_libretro/input/mouse_tracker.h
+@@ -59,19 +59,19 @@ public:
+     Frontend::EmuWindow::CursorInfo GetCursorInfo();
+ 
+ private:
+-    int x;
+-    int y;
++    int x = 0;
++    int y = 0;
+ 
+-    float lastMouseX;
+-    float lastMouseY;
++    float lastMouseX = 0;
++    float lastMouseY = 0;
+ 
+-    float projectedX;
+-    float projectedY;
++    float projectedX = 0;
++    float projectedY = 0;
+ 
+     std::chrono::steady_clock::time_point last_moved;
+-    bool isPressed;
++    bool isPressed = false;
+ 
+-    Layout::FramebufferLayout framebuffer_layout;
++    Layout::FramebufferLayout framebuffer_layout{};
+     std::unique_ptr<CursorRenderer> cursor_renderer;
+ };
+ 
+diff --git a/src/citra_libretro/libretro.osx.def b/src/citra_libretro/libretro.osx.def
+index 53a556a60..131330566 100644
+--- a/src/citra_libretro/libretro.osx.def
++++ b/src/citra_libretro/libretro.osx.def
+@@ -25,3 +25,7 @@ _retro_unload_game
+ _retro_get_region
+ _retro_get_memory_data
+ _retro_get_memory_size
++
++_emucap_get_build_profile_json
++_emucap_get_effective_user_root
++_emucap_get_last_error

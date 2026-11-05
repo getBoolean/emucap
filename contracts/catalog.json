@@ -13,6 +13,8 @@
     "CORE.CLEANUP.1"
   ],
   "expectations": [
+    {"id":"EXEC.WAIT.RUNNING.1", "category":"invariant", "expression":"wait_running(q) => running(before(q)) and no_implicit_pause_resume(q); completed(q) => observed_native_counter_delta(q) >= requested(q) and reports(domain, observed_delta, overshoot, state)"},
+    {"id":"EXEC.WAIT.CANCEL.1", "category":"invariant", "expression":"cancel(wait_running(q)) => bounded_terminal(q,interrupted) and no_waiter_after_terminal(q) and no_implicit_pause_resume(q) and no_mutation_of_persistent_input(q)"},
     {"id":"CANCEL.IDENTITY.1", "category":"invariant", "expression":"cancel_effect => exact_active(runtime, attachment, owner_id, operation_id); stale_cancel => no_native_effect"},
     {"id":"CANCEL.ACK.1", "category":"observation", "expression":"ack_requested => stop_requested; cancel_ack => not cleanup_proof(ack); verified_parent_finish and effects_started => native_stopped and acquired_inputs_released and pending_work_invalidated"},
     {"id":"CANCEL.OWNERSHIP.1", "category":"invariant", "expression":"admitted_parent => retain_ownership_until(verified_cleanup or generation_retired); unverified_cleanup => reject_later_mutation"},
@@ -283,7 +285,7 @@
     {
       "id": "INPUT.TOUCH.HOLD.1",
       "category": "postcondition",
-      "expression": "hold_touch(x,y).ok => touch_override_engaged(after) and touch_position(after) = (x,y)"
+      "expression": "hold_touch(x,y).ok => within(advertised_touch_bounds,x,y) and touch_override_engaged(after) and touch_position(after) = (x,y)"
     },
     {
       "id": "INPUT.TOUCH.RELEASE.1",
@@ -791,6 +793,15 @@
       "temporal_classes": ["T1"],
       "disposition": "retain",
       "expectations": ["EXEC.STEP.FRAME.1", "EXEC.STEP.INSTR.1", "TIME.RESPONSE.1", "TIME.PROGRESS.1", "TIME.EXACT.1", "TIME.STOP.1", "TIME.GAP.1", "DEBUG.CPU.SELECT.1"]
+    },
+    {
+      "id": "execution.wait-running",
+      "surface": "public",
+      "route": "debug",
+      "methods": ["wait_for_running_frames"],
+      "temporal_classes": ["T2"],
+      "disposition": "retain",
+      "expectations": ["EXEC.WAIT.RUNNING.1", "EXEC.WAIT.CANCEL.1", "CANCEL.IDENTITY.1", "TIME.RESPONSE.1", "TIME.PROGRESS.1", "TIME.COMPLETE.1"]
     },
     {
       "id": "execution.step-input-polls-wire",

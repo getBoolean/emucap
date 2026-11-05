@@ -4,6 +4,8 @@
 
 [한국어](README.ko.md) · [Releases](https://github.com/mcpads/emucap/releases) · [Agent guide](AGENT_GUIDE.md)
 
+[Credits and AI usage](CREDITS.md) · [Third-party notices](NOTICE)
+
 emucap connects MCP-compatible agents such as Claude Code and Codex to retro-game
 emulators. Ask your agent to play through a scene, reproduce a bug, or investigate
 what the game is doing. It can inspect the screen, press buttons, advance frames,
@@ -75,6 +77,7 @@ The core exposes two MCP servers: **Control** drives the emulator, while optiona
 | Mednafen | PlayStation, Saturn, PC Engine, PC-FX, Mega Drive / Genesis, WonderSwan / Color, Neo Geo Pocket / Color |
 | Flycast | Dreamcast |
 | DeSmuME | Nintendo DS |
+| melonDS DS / mGBA cores (opt-in, experimental) | Nintendo DS / Game Boy Advance |
 | PPSSPP | PSP |
 | PCSX2 | PlayStation 2 |
 | Dolphin | GameCube, Wii |
@@ -83,10 +86,20 @@ The core exposes two MCP servers: **Control** drives the emulator, while optiona
 | Mupen64Plus | Nintendo 64 |
 | openMSX | MSX1 / MSX2 / MSX2+ |
 | xemu | Original Xbox |
+| Azahar libretro (experimental) | Nintendo 3DS |
+| Eden family (experimental) | Switch; Switch 2 targets in Eden-NX2 and Eglantine |
 
 See the [adapter guide](AGENT_GUIDE.md#per-emulator-adapters-the-agent-installs-when-needed)
 for setup and each profile’s supported scope. emucap maintains source patches where
 native emulator changes are needed for control and observation.
+
+The Azahar, Eden-family and opt-in melonDS DS/mGBA integrations require matched
+source builds. See the [software-core adapter](adapters/libretro/README.md) for
+DS/GBA selection, setup and qualified capabilities.
+Their registration and protocol tests do not establish guest compatibility.
+See the [qualification record](docs/emulator-family-qualification.md) for exact pins,
+build results, live blockers, and unsupported operations. Eglantine uses
+[Djihads80/Eglantine](https://github.com/Djihads80/Eglantine), branch `nx2`.
 
 ## Project status
 

@@ -24,6 +24,61 @@ fn enriched(methods: &[&str]) -> serde_json::Value {
 }
 
 #[test]
+fn persistent_touch_capability_does_not_advertise_a_timed_pulse() {
+    let value = enriched_from(
+        serde_json::json!({"connected":true,
+        "touch_capability":{"ports":[0],"width":320,"height":240,
+            "coordinate_space":"touchscreen","contacts":1}}),
+        &["touch"],
+    );
+    assert!(has_method(&value, "hold_touch"));
+    assert!(has_method(&value, "release_touch"));
+    assert!(!has_method(&value, "pulse_touch_while_running"));
+}
+
+#[test]
+fn native_progress_wait_is_public_only_when_its_capability_is_valid() {
+    let value = enriched_from(
+        serde_json::json!({"connected":true,
+        "progress_capability":{"domain":"native_render_present","max_count":5000,
+            "max_timeout_ms":250000,"overshoot":true,"running_only":true},
+        "temporal_cancellation_capability":{"methods":["wait_for_running_frames"],"control_service_ms":25,"stop_host_ms":500}}),
+        &["wait_for_running_frames", "run_frames"],
+    );
+    assert!(has_method(&value, "wait_for_running_frames"));
+    assert!(!has_method(&value, "run_frames"));
+    let missing = enriched(&["wait_for_running_frames"]);
+    assert!(!has_method(&missing, "wait_for_running_frames"));
+}
+
+#[test]
+fn status_uses_negotiated_touch_progress_and_cancellation_metadata() {
+    let methods = ["touch", "wait_for_running_frames", "cancel_operation"].map(String::from);
+    let hello = serde_json::json!({"touch_capability":{"ports":[0],"width":320,"height":240,
+        "coordinate_space":"touchscreen","contacts":1},
+        "progress_capability":{"domain":"libretro_present","max_count":50,"max_timeout_ms":1000,"overshoot":true,"running_only":true},
+        "temporal_cancellation_capability":{"methods":["wait_for_running_frames"],"control_service_ms":25,"stop_host_ms":500}});
+    let features =
+        emucap::live::link::FeatureCapabilities::from_hello(&hello, &methods, &[]).unwrap();
+    let mut value = enriched_from(
+        serde_json::json!({"connected":true}),
+        &["touch", "wait_for_running_frames"],
+    );
+    enrich_feature_capabilities(&mut value, &features);
+    assert_eq!(value["touch_capability"], hello["touch_capability"]);
+    assert_eq!(value["progress_capability"], hello["progress_capability"]);
+    assert_eq!(
+        value["temporal_cancellation_capability"],
+        hello["temporal_cancellation_capability"]
+    );
+    assert!(!has_method(&value, "pulse_touch_while_running"));
+    assert!(has_method(&value, "wait_for_running_frames"));
+    let first = capability_revision(&value);
+    value["temporal_cancellation_capability"]["stop_host_ms"] = serde_json::json!(1000);
+    assert_ne!(first, capability_revision(&value));
+}
+
+#[test]
 fn connected_status_exposes_generation_bound_debug_selection() {
     let identity = EmulatorIdentity::from_hello(&serde_json::json!({
         "state_groups": ["cpu", "ppu"],
@@ -861,6 +916,22 @@ fn runtime_paths_exposes_build_and_runtime_locations_without_launcher_aliases() 
     assert!(paths.pointer("/legacy_fallbacks").is_none());
     assert!(paths.pointer("/adapters/mesen2/launch").is_none());
     assert!(paths.pointer("/adapters/pcsx2/launch").is_none());
+    assert_eq!(
+        paths["adapters"]["ryujinx_family"]["forks"],
+        serde_json::json!(["ryubing"])
+    );
+    assert_eq!(
+        paths["adapters"]["ryujinx_family"]["systems"],
+        serde_json::json!(["switch"])
+    );
+    assert_eq!(
+        paths["adapters"]["ryujinx_family"]["binary_env"],
+        "EMUCAP_RYUJINX_BIN"
+    );
+    assert!(paths["adapters"]["ryujinx_family"]["guide"]
+        .as_str()
+        .unwrap()
+        .contains("ryujinx-family"));
 }
 
 #[test]

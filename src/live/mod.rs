@@ -12,6 +12,7 @@ pub mod link;
 pub mod memory_batch;
 pub mod pacing;
 pub mod producer_auth;
+pub mod progress;
 pub mod protocol;
 pub mod reconnect;
 pub mod recording;

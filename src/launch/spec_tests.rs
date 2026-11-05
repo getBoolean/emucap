@@ -287,6 +287,10 @@ fn dolphin_headless_spec_uses_isolated_user_and_headless_platform() {
         .contains(&("EMUCAP_DOLPHIN_SOUND".into(), "1".into())));
     assert!(!spec.args.iter().any(|arg| arg.contains("DSP.Backend")));
     assert!(spec.args.iter().any(|arg| arg == "--platform=headless"));
+    assert!(spec
+        .args
+        .iter()
+        .any(|arg| arg == "--config=Graphics.Settings.FrameDumpsResolutionType=2"));
     assert!(!spec.args.iter().any(|arg| arg == "--batch"));
     assert!(spec
         .env
